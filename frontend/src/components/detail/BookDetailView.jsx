@@ -124,6 +124,10 @@ export default function BookDetailView({ bookId, onNavigate }) {
               src={book.cover_image || ''}
               alt={book.title}
               className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
+              onError={(e) => {
+                e.currentTarget.onerror = null;
+                e.currentTarget.src = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&q=80&w=600';
+              }}
             />
             <div className="absolute inset-0 bg-stone-950/20 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
               <span className="px-3.5 py-2 rounded-full bg-stone-900/80 text-white text-xs font-bold flex items-center gap-1.5 backdrop-blur-sm">

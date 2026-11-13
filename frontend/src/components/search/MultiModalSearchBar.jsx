@@ -72,7 +72,7 @@ export default function MultiModalSearchBar({
   };
 
   return (
-    <div className="relative flex-1 max-w-2xl">
+    <div className="relative flex-1 max-w-3xl">
       <form
         onSubmit={handleSubmit}
         className={`flex items-center h-11 rounded-full border transition-all duration-300 shadow-sm overflow-hidden relative pl-0 pr-1.5 ${
@@ -85,8 +85,8 @@ export default function MultiModalSearchBar({
         <button
           type="button"
           onClick={toggleAiMode}
-          title={isAiActive ? 'Chế độ AI đang bật (nhấn để tắt)' : 'Nhấn để bật tìm kiếm Cốt truyện AI'}
-          className={`h-full flex items-center gap-1.5 px-4 text-xs font-bold transition-all duration-300 shrink-0 select-none cursor-pointer border-r ${
+          title={isAiActive ? 'Chế độ AI Nội dung sách đang bật (nhấn để tắt)' : 'Nhấn để bật tìm kiếm AI theo nội dung sách'}
+          className={`h-full flex items-center gap-1.5 px-3.5 text-xs font-bold transition-all duration-300 shrink-0 select-none cursor-pointer border-r ${
             isAiActive
               ? 'bg-gradient-to-r from-amber-500 via-rose-500 to-crimson-700 text-white border-amber-300/80 shadow-inner'
               : 'bg-white hover:bg-stone-50 text-stone-600 border-stone-200'
@@ -97,7 +97,8 @@ export default function MultiModalSearchBar({
               isAiActive ? 'text-amber-200 fill-amber-200 animate-pulse' : 'text-stone-400'
             }`}
           />
-          <span className="tracking-wide">AI</span>
+          <span className="tracking-wide hidden sm:inline">AI Nội dung sách</span>
+          <span className="tracking-wide sm:hidden">AI</span>
           <span className="relative flex h-2 w-2 shrink-0 ml-0.5">
             {isAiActive && (
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75"></span>
@@ -120,8 +121,8 @@ export default function MultiModalSearchBar({
             isListening
               ? '🎙️ Đang nghe bạn nói... (Hãy nói tên tác phẩm, tác giả)'
               : isAiActive
-              ? '✨ AI đang bật: Hãy miêu tả nội dung, cốt truyện, nhân vật bạn nhớ...'
-              : 'Tìm kiếm theo tựa sách, tác giả, nhà xuất bản...'
+              ? '✨ AI Nội dung sách: Hãy miêu tả nội dung, cốt truyện, nhân vật bạn nhớ...'
+              : 'Tìm kiếm tựa sách, văn phòng phẩm, mô hình lưu niệm, tác giả...'
           }
           className="flex-1 h-full bg-transparent px-3 text-xs text-stone-800 placeholder-stone-400 focus:outline-none"
         />

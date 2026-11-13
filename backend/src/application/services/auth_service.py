@@ -10,7 +10,8 @@ import jwt
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
 
-from ...domain.entities.user import User, UserRole
+from ...domain.entities.user import User
+from ...domain.entities.customer import Customer
 from ...domain.exceptions import DomainException, EntityNotFoundException
 from ...infrastructure.repositories.user_repository import UserRepository
 from ..dtos.models import LoginRequest, RegisterRequest, TokenResponse, UserProfileResponse
@@ -61,14 +62,15 @@ class AuthService:
         if not user or not self.verify_password(request.password, user.password_hash):
             raise DomainException("Tài khoản hoặc mật khẩu không chính xác.")
 
-        token = self.create_access_token(user.user_id, user.username, user.role.value)
+        role_str = user.role if isinstance(user.role, str) else getattr(user.role, 'value', str(user.role))
+        token = self.create_access_token(str(user.user_id), user.username, role_str)
         return TokenResponse(
             access_token=token,
             token_type="bearer",
-            user_id=user.user_id,
+            user_id=str(user.user_id),
             username=user.username,
             full_name=user.full_name,
-            role=user.role.value
+            role=role_str
         )
 
     def register(self, request: RegisterRequest) -> TokenResponse:
@@ -82,43 +84,44 @@ class AuthService:
         if existing_email:
             raise DomainException(f"Địa chỉ email '{request.email}' đã được sử dụng.")
 
-        user_id = f"USER_{uuid.uuid4().hex[:8].upper()}"
         password_hash = self.hash_password(request.password)
 
-        new_user = User(
-            user_id=user_id,
+        new_customer = Customer(
             username=request.username,
             password_hash=password_hash,
             email=request.email,
             full_name=request.full_name,
             phone=request.phone,
-            role=UserRole.CUSTOMER,
-            shipping_address=request.shipping_address,
+            role="CUSTOMER",
+            shipping_address=request.shipping_address or "",
             loyalty_points=0
         )
-        self.user_repo.create_user(new_user)
+        saved_customer = self.user_repo.create_customer(new_customer)
 
-        token = self.create_access_token(new_user.user_id, new_user.username, new_user.role.value)
+        role_str = "CUSTOMER"
+        token = self.create_access_token(str(saved_customer.user_id), saved_customer.username, role_str)
         return TokenResponse(
             access_token=token,
             token_type="bearer",
-            user_id=new_user.user_id,
-            username=new_user.username,
-            full_name=new_user.full_name,
-            role=new_user.role.value
+            user_id=str(saved_customer.user_id),
+            username=saved_customer.username,
+            full_name=saved_customer.full_name,
+            role=role_str
         )
 
     def get_profile(self, user_id: str) -> UserProfileResponse:
-        user = self.user_repo.get_by_id(user_id)
+        uid = int(user_id) if str(user_id).isdigit() else user_id
+        user = self.user_repo.get_by_id(uid)
         if not user:
-            raise EntityNotFoundException("User", user_id)
+            raise EntityNotFoundException("User", str(user_id))
+        role_str = user.role if isinstance(user.role, str) else getattr(user.role, 'value', str(user.role))
         return UserProfileResponse(
-            user_id=user.user_id,
+            user_id=str(user.user_id),
             username=user.username,
             email=user.email,
             full_name=user.full_name,
             phone=user.phone,
-            role=user.role.value,
-            shipping_address=user.shipping_address,
-            loyalty_points=user.loyalty_points
+            role=role_str,
+            shipping_address=getattr(user, "shipping_address", ""),
+            loyalty_points=getattr(user, "loyalty_points", 0)
         )

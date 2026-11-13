@@ -3,203 +3,235 @@
 -- Hệ thống Thương mại Điện tử Nhà sách BookHaven
 -- Học viện Công nghệ Bưu chính Viễn thông (PTIT)
 -- Sinh viên: Mai Hữu Sơn - MSSV: B23DCAT262 | GVHD: PGS. TS. Trần Đình Quế
--- Tiêu chuẩn: ANSI SQL / SQLite 3 / PostgreSQL Compatible
+-- 100% Đồng bộ với Lược đồ ERD Chương 4 (Figure 4.2 - 17 Tables ORM Persistable)
 -- ============================================================================
 
--- Bật kiểm tra tính toàn vẹn khóa ngoại (Foreign Key Constraints)
+-- Bắt buộc kích hoạt toàn vẹn khóa ngoại trong SQLite
 PRAGMA foreign_keys = ON;
 
 -- ----------------------------------------------------------------------------
--- 1. BẢNG USERS (Người dùng hệ thống - Single Table Inheritance)
+-- 1. BẢNG USERS (Lớp người dùng cơ sở / Base Identity)
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS users (
-    user_id TEXT PRIMARY KEY,
-    username TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    full_name TEXT NOT NULL,
-    phone TEXT,
-    role TEXT NOT NULL DEFAULT 'CUSTOMER' CHECK (role IN ('CUSTOMER', 'STAFF', 'ADMIN', 'MANAGER')),
-    shipping_address TEXT,
-    loyalty_points INTEGER DEFAULT 0 CHECK (loyalty_points >= 0),
-    staff_role TEXT,
-    department TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    full_name VARCHAR(100) NOT NULL,
+    phone VARCHAR(20),
+    role VARCHAR(20) NOT NULL DEFAULT 'CUSTOMER' CHECK (role IN ('CUSTOMER', 'STAFF', 'ADMIN', 'MANAGER')),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ----------------------------------------------------------------------------
--- 2. BẢNG AUTHORS (Tác giả tác phẩm)
+-- 2. BẢNG CUSTOMERS (Lớp con kế thừa từ Users - Khách hàng)
 -- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS authors (
-    author_id TEXT PRIMARY KEY,
-    author_name TEXT NOT NULL,
-    biography TEXT,
-    nationality TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS customers (
+    user_id INTEGER PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+    shipping_address VARCHAR(255),
+    loyalty_points INTEGER DEFAULT 0 CHECK (loyalty_points >= 0)
 );
 
 -- ----------------------------------------------------------------------------
--- 3. BẢNG PUBLISHERS (Nhà xuất bản đối tác)
+-- 3. BẢNG STAFFS (Lớp con kế thừa từ Users - Nhân viên)
 -- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS publishers (
-    publisher_id TEXT PRIMARY KEY,
-    publisher_name TEXT NOT NULL,
-    address TEXT,
-    contact_email TEXT,
-    phone TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS staffs (
+    user_id INTEGER PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+    staff_role VARCHAR(50) NOT NULL,
+    department VARCHAR(50) NOT NULL
 );
 
 -- ----------------------------------------------------------------------------
--- 4. BẢNG CATEGORIES (Thể loại & Phân mục sách)
+-- 4. BẢNG CATEGORIES (Thể loại & Phân mục sản phẩm)
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS categories (
-    category_id TEXT PRIMARY KEY,
-    category_name TEXT NOT NULL,
+    category_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category_name VARCHAR(100) NOT NULL,
     description TEXT,
-    slug TEXT UNIQUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    slug VARCHAR(100) UNIQUE NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ----------------------------------------------------------------------------
--- 5. BẢNG BOOKS (Tác phẩm chung)
+-- 5. BẢNG PUBLISHERS (Nhà xuất bản đối tác)
 -- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS books (
-    book_id TEXT PRIMARY KEY,
-    title TEXT NOT NULL,
-    author_id TEXT NOT NULL REFERENCES authors(author_id) ON DELETE RESTRICT,
-    publisher_id TEXT NOT NULL REFERENCES publishers(publisher_id) ON DELETE RESTRICT,
-    category_id TEXT NOT NULL REFERENCES categories(category_id) ON DELETE RESTRICT,
-    publish_year INTEGER,
-    description TEXT,
-    cover_image TEXT,
-    is_active INTEGER DEFAULT 1 CHECK (is_active IN (0, 1)),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS publishers (
+    publisher_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    publisher_name VARCHAR(150) NOT NULL,
+    address VARCHAR(255),
+    contact_email VARCHAR(100),
+    phone VARCHAR(20),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ----------------------------------------------------------------------------
--- 6. BẢNG BOOK_EDITIONS (Ấn bản Bìa mềm / Bìa cứng - SKU & ISBN-13 độc lập)
+-- 6. BẢNG AUTHORS (Tác giả)
 -- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS book_editions (
-    edition_id TEXT PRIMARY KEY,
-    book_id TEXT NOT NULL REFERENCES books(book_id) ON DELETE CASCADE,
-    sku TEXT UNIQUE NOT NULL,
-    isbn13 TEXT UNIQUE NOT NULL,
-    binding_type TEXT NOT NULL CHECK (binding_type IN ('PAPERBACK', 'HARDCOVER')),
+CREATE TABLE IF NOT EXISTS authors (
+    author_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    author_name VARCHAR(150) NOT NULL,
+    biography TEXT,
+    nationality VARCHAR(50),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ----------------------------------------------------------------------------
+-- 7. BẢNG PRODUCTS (Lớp cha trừu tượng - Quản lý tồn kho chung)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS products (
+    product_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category_id INTEGER REFERENCES categories(category_id) ON DELETE RESTRICT,
+    sku VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
     unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
     weight_gram INTEGER NOT NULL CHECK (weight_gram > 0),
     stock_on_hand INTEGER NOT NULL DEFAULT 0 CHECK (stock_on_hand >= 0),
     stock_reserved INTEGER NOT NULL DEFAULT 0 CHECK (stock_reserved >= 0),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    description TEXT,
+    cover_image VARCHAR(255),
+    is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CHECK (stock_on_hand >= stock_reserved)
 );
 
 -- ----------------------------------------------------------------------------
--- 7. BẢNG BOOK_EMBEDDINGS (Vector nhúng ngữ nghĩa AI d=384 - Chương 3)
+-- 8. BẢNG BOOKS (Lớp con kế thừa từ Products - Sách in)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS books (
+    product_id INTEGER PRIMARY KEY REFERENCES products(product_id) ON DELETE CASCADE,
+    isbn13 VARCHAR(13) UNIQUE NOT NULL,
+    author_id INTEGER REFERENCES authors(author_id) ON DELETE RESTRICT,
+    publisher_id INTEGER REFERENCES publishers(publisher_id) ON DELETE RESTRICT,
+    publish_year INTEGER NOT NULL,
+    binding_type VARCHAR(30) NOT NULL CHECK (binding_type IN ('Paperback', 'Hardcover', 'PAPERBACK', 'HARDCOVER'))
+);
+
+-- ----------------------------------------------------------------------------
+-- 9. BẢNG STATIONERIES (Lớp con kế thừa từ Products - Văn phòng phẩm)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS stationeries (
+    product_id INTEGER PRIMARY KEY REFERENCES products(product_id) ON DELETE CASCADE,
+    brand VARCHAR(100) NOT NULL,
+    material VARCHAR(100),
+    color VARCHAR(50)
+);
+
+-- ----------------------------------------------------------------------------
+-- 10. BẢNG COLLECTIBLES (Lớp con kế thừa từ Products - Quà tặng, Đồ sưu tầm)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS collectibles (
+    product_id INTEGER PRIMARY KEY REFERENCES products(product_id) ON DELETE CASCADE,
+    origin VARCHAR(100),
+    material VARCHAR(100),
+    dimensions VARCHAR(50)
+);
+
+-- ----------------------------------------------------------------------------
+-- 11. BẢNG BOOK_EMBEDDINGS (Vector nhúng ngữ nghĩa AI d=384 - Chương 3)
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS book_embeddings (
-    embedding_id TEXT PRIMARY KEY,
-    book_id TEXT UNIQUE NOT NULL REFERENCES books(book_id) ON DELETE CASCADE,
+    product_id INTEGER PRIMARY KEY REFERENCES books(product_id) ON DELETE CASCADE,
     vector_json TEXT NOT NULL,
-    model_name TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    model_name VARCHAR(100) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ----------------------------------------------------------------------------
--- 8. BẢNG CARTS (Giỏ hàng độc giả)
+-- 12. BẢNG CARTS (Giỏ hàng khách hàng)
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS carts (
-    cart_id TEXT PRIMARY KEY,
-    customer_id TEXT UNIQUE NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    cart_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER UNIQUE NOT NULL REFERENCES customers(user_id) ON DELETE CASCADE,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ----------------------------------------------------------------------------
--- 9. BẢNG CART_ITEMS (Dòng sản phẩm chọn mua tạm thời)
+-- 13. BẢNG CART_ITEMS (Sản phẩm trong giỏ hàng - trỏ về Products)
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS cart_items (
-    cart_item_id TEXT PRIMARY KEY,
-    cart_id TEXT NOT NULL REFERENCES carts(cart_id) ON DELETE CASCADE,
-    edition_id TEXT NOT NULL REFERENCES book_editions(edition_id) ON DELETE RESTRICT,
-    quantity INTEGER NOT NULL CHECK (quantity > 0),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(cart_id, edition_id)
+    cart_item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cart_id INTEGER NOT NULL REFERENCES carts(cart_id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL REFERENCES products(product_id) ON DELETE RESTRICT,
+    quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(cart_id, product_id)
 );
 
 -- ----------------------------------------------------------------------------
--- 10. BẢNG ORDERS (Đơn đặt hàng chính thức)
+-- 14. BẢNG ORDERS (Đơn đặt hàng chính thức)
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS orders (
-    order_id TEXT PRIMARY KEY,
-    customer_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
-    receiver_name TEXT NOT NULL,
-    receiver_phone TEXT NOT NULL,
-    shipping_address TEXT NOT NULL,
-    payment_method TEXT NOT NULL CHECK (payment_method IN ('VIETQR', 'COD')),
+    order_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER NOT NULL REFERENCES customers(user_id) ON DELETE RESTRICT,
+    receiver_name VARCHAR(100) NOT NULL,
+    receiver_phone VARCHAR(20) NOT NULL,
+    shipping_address VARCHAR(255) NOT NULL,
+    payment_method VARCHAR(30) NOT NULL CHECK (payment_method IN ('VIETQR', 'COD')),
+    carrier VARCHAR(50) NOT NULL CHECK (carrier IN ('GHN', 'GHN_STANDARD', 'GHN_EXPRESS', 'HANOI_DRONE', 'HANOI_DRONE_EXPRESS')),
+    tracking_code VARCHAR(50),
     total_amount INTEGER NOT NULL CHECK (total_amount >= 0),
     shipping_fee INTEGER NOT NULL DEFAULT 0 CHECK (shipping_fee >= 0),
-    discount_amount INTEGER NOT NULL DEFAULT 0 CHECK (discount_amount >= 0),
+    discount_amount INTEGER DEFAULT 0 CHECK (discount_amount >= 0),
     final_amount INTEGER NOT NULL CHECK (final_amount >= 0),
-    status TEXT NOT NULL DEFAULT 'AWAITING_PAYMENT' CHECK (status IN (
-        'AWAITING_PAYMENT', 'PAID', 'PENDING_CASH', 'PACKED', 'SHIPPING', 'DELIVERED', 'CANCELLED'
+    status VARCHAR(30) NOT NULL DEFAULT 'AWAITING_PAYMENT' CHECK (status IN (
+        'AWAITING_PAYMENT', 'PENDING_PAYMENT', 'PAID', 'PENDING_CASH', 'PACKED', 'SHIPPING', 'DELIVERED', 'CANCELLED'
     )),
-    carrier TEXT CHECK (carrier IN ('GHN_STANDARD', 'GHN_EXPRESS', 'HANOI_DRONE')),
-    tracking_code TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ----------------------------------------------------------------------------
--- 11. BẢNG ORDER_ITEMS (Snapshot bất biến tài chính tại thời điểm chốt đơn - BR03)
+-- 15. BẢNG ORDER_ITEMS (Snapshot bất biến tài chính & định lượng tại checkout)
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS order_items (
-    order_item_id TEXT PRIMARY KEY,
-    order_id TEXT NOT NULL REFERENCES orders(order_id) ON DELETE CASCADE,
-    edition_id TEXT NOT NULL REFERENCES book_editions(edition_id) ON DELETE RESTRICT,
-    title_snapshot TEXT NOT NULL,
-    sku_snapshot TEXT NOT NULL,
-    binding_type_snapshot TEXT NOT NULL,
-    isbn13_snapshot TEXT NOT NULL,
+    order_item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL REFERENCES orders(order_id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL REFERENCES products(product_id) ON DELETE RESTRICT,
+    product_name_snapshot VARCHAR(255) NOT NULL,
+    sku_snapshot VARCHAR(50) NOT NULL,
+    product_kind_snapshot VARCHAR(30) NOT NULL,
     unit_price_at_purchase INTEGER NOT NULL CHECK (unit_price_at_purchase >= 0),
     quantity INTEGER NOT NULL CHECK (quantity > 0),
     weight_gram_snapshot INTEGER NOT NULL CHECK (weight_gram_snapshot > 0),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ----------------------------------------------------------------------------
--- 12. BẢNG STOCK_RESERVATIONS (Bản ghi khóa giữ chỗ kho 15 phút - BR05)
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS stock_reservations (
-    reservation_id TEXT PRIMARY KEY,
-    order_id TEXT NOT NULL REFERENCES orders(order_id) ON DELETE CASCADE,
-    edition_id TEXT NOT NULL REFERENCES book_editions(edition_id) ON DELETE RESTRICT,
-    reserved_quantity INTEGER NOT NULL CHECK (reserved_quantity > 0),
-    expires_at TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'COMMITTED', 'RELEASED')),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- ----------------------------------------------------------------------------
--- 13. BẢNG PAYMENTS (Chứng từ dòng tiền thực thu - BR04)
+-- 16. BẢNG PAYMENTS (Chứng từ thanh toán)
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS payments (
-    payment_id TEXT PRIMARY KEY,
-    order_id TEXT UNIQUE NOT NULL REFERENCES orders(order_id) ON DELETE RESTRICT,
-    payment_method TEXT NOT NULL,
+    payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER UNIQUE NOT NULL REFERENCES orders(order_id) ON DELETE CASCADE,
+    payment_method VARCHAR(30) NOT NULL,
     amount INTEGER NOT NULL CHECK (amount >= 0),
-    transaction_code TEXT,
-    status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'SUCCESS', 'FAILED')),
-    paid_at TIMESTAMP
+    transaction_code VARCHAR(100),
+    status VARCHAR(30) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'SUCCESS', 'FAILED')),
+    paid_at DATETIME
+);
+
+-- ----------------------------------------------------------------------------
+-- 17. BẢNG STOCK_RESERVATIONS (Bản ghi khóa giữ chỗ kho 15 phút - BR03)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS stock_reservations (
+    reservation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL REFERENCES orders(order_id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL REFERENCES products(product_id) ON DELETE RESTRICT,
+    reserved_quantity INTEGER NOT NULL CHECK (reserved_quantity > 0),
+    expires_at DATETIME NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'COMMITTED', 'RELEASED')),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ============================================================================
--- CHỈ MỤC HIỆU NĂNG (INDEXES)
+-- CHỈ MỤC TỐI ƯU TRUY VẤN (INDEXES)
 -- ============================================================================
-CREATE INDEX IF NOT EXISTS idx_books_category ON books(category_id);
+CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
+CREATE INDEX IF NOT EXISTS idx_products_sku ON products(sku);
+CREATE INDEX IF NOT EXISTS idx_books_isbn ON books(isbn13);
 CREATE INDEX IF NOT EXISTS idx_books_author ON books(author_id);
-CREATE INDEX IF NOT EXISTS idx_editions_book ON book_editions(book_id);
+CREATE INDEX IF NOT EXISTS idx_books_publisher ON books(publisher_id);
 CREATE INDEX IF NOT EXISTS idx_cart_items_cart ON cart_items(cart_id);
 CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);

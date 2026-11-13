@@ -30,10 +30,10 @@ def _get_admin_headers():
 def _get_sample_edition_id() -> str:
     session = DatabaseSession()
     conn = session.get_connection()
-    row = conn.execute("SELECT edition_id FROM book_editions WHERE weight_gram <= 600 AND stock_on_hand > 5 LIMIT 1;").fetchone()
+    row = conn.execute("SELECT product_id FROM products WHERE weight_gram <= 600 AND stock_on_hand > 5 LIMIT 1;").fetchone()
     if not row:
-        row = conn.execute("SELECT edition_id FROM book_editions LIMIT 1;").fetchone()
-    return row["edition_id"]
+        row = conn.execute("SELECT product_id FROM products LIMIT 1;").fetchone()
+    return str(row["product_id"])
 
 
 # ==================== 1. KIỂM THỬ TRẠNG THÁI HỆ THỐNG & FRONTEND SPA ====================
@@ -175,8 +175,8 @@ def test_search_image_visual():
 
 # ==================== 5. KIỂM THỬ RÀNG BUỘC TẢI TRỌNG DRONE 2000G ====================
 def test_drone_weight_options_and_invariant():
-    customer_id = "USER_USER"
-    cart_id = "CART_USER_USER"
+    customer_id = "2"
+    cart_id = "1"
     session = DatabaseSession()
     cart_repo = CartRepository(session)
     sample_eid = _get_sample_edition_id()
@@ -217,8 +217,8 @@ def test_drone_weight_options_and_invariant():
 
 # ==================== 6. KIỂM THỬ CHECKOUT 10 BƯỚC TRANSACTION ====================
 def _create_sample_checkout_order() -> str:
-    customer_id = "USER_USER"
-    cart_id = "CART_USER_USER"
+    customer_id = "2"
+    cart_id = "1"
     session = DatabaseSession()
     cart_repo = CartRepository(session)
     book_repo = BookRepository(session)
@@ -253,8 +253,8 @@ def _create_sample_checkout_order() -> str:
     return order["order_id"]
 
 def test_atomic_checkout_success():
-    customer_id = "USER_USER"
-    cart_id = "CART_USER_USER"
+    customer_id = "2"
+    cart_id = "1"
     session = DatabaseSession()
     cart_repo = CartRepository(session)
     book_repo = BookRepository(session)
@@ -361,7 +361,7 @@ def test_bank_webhook_payment():
 
     # Kiểm tra trạng thái đơn hàng đã sang PAID
     refreshed_order = order_repo.get_order_by_id(order_id)
-    assert refreshed_order.status.value == "PAID"
+    assert refreshed_order.status == "PAID"
 
 
 # ==================== 9. KIỂM THỬ BACKGROUND WORKER GIẢI PHÓNG HẾT HẠN 15 PHÚT ====================
@@ -376,7 +376,7 @@ def test_background_worker_expired_reservation():
     reserved_before = edition_before.stock_reserved
 
     # Can thiệp thời gian hết hạn của bản ghi giữ chỗ về quá khứ (cách đây 20 phút)
-    past_time = (datetime.now() - timedelta(minutes=20)).isoformat()
+    past_time = (datetime.utcnow() - timedelta(minutes=20)).strftime("%Y-%m-%d %H:%M:%S")
     session.get_connection().execute(
         "UPDATE stock_reservations SET expires_at = ? WHERE order_id = ?;",
         (past_time, order_id)
@@ -393,7 +393,7 @@ def test_background_worker_expired_reservation():
 
     # Đơn hàng quá hạn chưa thanh toán phải chuyển thành CANCELLED
     canceled_order = order_repo.get_order_by_id(order_id)
-    assert canceled_order.status.value == "CANCELLED"
+    assert canceled_order.status == "CANCELLED"
 
 
 # ==================== 10. KIỂM THỬ QUẢN TRỊ ADMIN (DISPATCH, RESTOCK, REVENUE) ====================
@@ -443,8 +443,8 @@ def test_admin_dispatch_and_reports():
 
 def test_drone_cod_checkout_and_status_flow():
     """Kiểm thử luồng giao Drone với hình thức COD: đảm bảo không bị rơi về GHN và get_order_status hoạt động chuẩn."""
-    customer_id = "USER_USER"
-    cart_id = "CART_USER_USER"
+    customer_id = "2"
+    cart_id = "1"
     session = DatabaseSession()
     cart_repo = CartRepository(session)
     book_repo = BookRepository(session)
@@ -505,7 +505,7 @@ def test_drone_cod_checkout_and_status_flow():
     status_res = client.get(f"/api/orders/{order_id}/status")
     assert status_res.status_code == 200
     status_data = status_res.json()
-    assert status_data["order_id"] == order_id
+    assert str(status_data["order_id"]) == str(order_id)
     assert status_data["carrier"] == "HANOI_DRONE"
     assert status_data["payment_method"] == "VIETQR"
     assert status_data["status"] == "PAID"

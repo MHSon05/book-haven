@@ -107,10 +107,13 @@ app.include_router(chatbot_router, prefix="/api")
 app.include_router(payment_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 
-# Mount thư mục assets phục vụ ảnh bìa sách
+# Mount thư mục assets phục vụ ảnh bìa sách và sản phẩm
 os.makedirs(MEDIA_DIR, exist_ok=True)
 app.mount("/static", StaticFiles(directory=MEDIA_DIR), name="static")
 app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")
+COVERS_DIR = os.path.join(MEDIA_DIR, "covers")
+if os.path.exists(COVERS_DIR):
+    app.mount("/covers", StaticFiles(directory=COVERS_DIR), name="covers")
 
 # Mount thư mục assets của React Frontend build (nếu có)
 if os.path.exists(ASSETS_DIR):

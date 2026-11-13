@@ -1,75 +1,99 @@
 """
-Domain Entity: Cart & CartItem
-Mô hình hóa giỏ hàng và danh mục sản phẩm chọn mua tạm thời của độc giả.
-Tuân thủ nguyên tắc: CartItem is NOT OrderItem (Slide 04 & Slide 19).
+Domain Entity: Cart
+Giỏ hàng khách hàng lưu giữ các mặt hàng chọn mua tạm thời.
+Khớp 100% với Hình 4.3. KHÔNG dùng Enum.
 """
-from dataclasses import dataclass, field
-from typing import Dict, Optional
-from .book_edition import BookEdition
-
-@dataclass
-class CartItem:
-    cart_item_id: str
-    cart_id: str
-    edition_id: str
-    quantity: int
-    edition: Optional[BookEdition] = None
-
-    def subtotal(self) -> int:
-        if not self.edition:
-            return 0
-        return self.edition.unit_price * self.quantity
+from typing import Optional, List
+from datetime import datetime
+from src.domain.entities.cart_item import CartItem
+from src.domain.entities.product import Product
 
 
-@dataclass
 class Cart:
-    cart_id: str
-    customer_id: str
-    items: Dict[str, CartItem] = field(default_factory=dict)  # Key: edition_id
+    def __init__(
+        self,
+        cart_id: Optional[int] = None,
+        customer_id: Optional[int] = None,
+        items: Optional[List[CartItem]] = None,
+        created_at: Optional[datetime] = None,
+        updated_at: Optional[datetime] = None,
+    ):
+        self._cart_id = cart_id
+        self._customer_id = customer_id
+        self._items = items or []
+        self._created_at = created_at or datetime.utcnow()
+        self._updated_at = updated_at or datetime.utcnow()
 
-    def add_item(self, edition: BookEdition, quantity: int = 1):
-        """Thêm hoặc cộng dồn số lượng ấn bản sách trong giỏ."""
-        if quantity <= 0:
-            raise ValueError("Số lượng thêm vào giỏ phải lớn hơn 0.")
-        
-        if edition.edition_id in self.items:
-            self.items[edition.edition_id].quantity += quantity
-        else:
-            self.items[edition.edition_id] = CartItem(
-                cart_item_id=f"ITEM_{self.cart_id}_{edition.edition_id}",
-                cart_id=self.cart_id,
-                edition_id=edition.edition_id,
-                quantity=quantity,
-                edition=edition
-            )
+    @property
+    def cart_id(self) -> Optional[int]:
+        return self._cart_id
 
-    def update_quantity(self, edition_id: str, quantity: int):
-        """Cập nhật số lượng ấn bản trong giỏ hoặc xóa nếu quantity <= 0."""
-        if edition_id not in self.items:
-            raise KeyError(f"Ấn bản {edition_id} không có trong giỏ hàng.")
-        
-        if quantity <= 0:
-            del self.items[edition_id]
-        else:
-            self.items[edition_id].quantity = quantity
+    @property
+    def customer_id(self) -> Optional[int]:
+        return self._customer_id
 
-    def remove_item(self, edition_id: str):
-        """Xóa hẳn một dòng ấn bản khỏi giỏ."""
-        if edition_id in self.items:
-            del self.items[edition_id]
+    @property
+    def items(self) -> List[CartItem]:
+        return self._items
 
-    def clear(self):
-        """Dọn sạch giỏ hàng sau khi checkout thành công."""
-        self.items.clear()
+    @property
+    def created_at(self) -> datetime:
+        return self._created_at
+
+    @property
+    def updated_at(self) -> datetime:
+        return self._updated_at
+
+    # Business Operations from UML
+    def add_item(self, product: Product, quantity: int = 1) -> CartItem:
+        """Thêm mặt hàng mới hoặc cộng dồn số lượng nếu đã có trong giỏ."""
+        for item in self._items:
+            if item.product_id == product.product_id:
+                item.increment_quantity(quantity)
+                self._updated_at = datetime.utcnow()
+                return item
+
+        new_item = CartItem(
+            cart_id=self._cart_id,
+            product=product,
+            product_id=product.product_id,
+            quantity=quantity,
+        )
+        self._items.append(new_item)
+        self._updated_at = datetime.utcnow()
+        return new_item
+
+    def update_item_quantity(self, cart_item_id: int, quantity: int) -> None:
+        """Cập nhật trực tiếp số lượng một dòng sản phẩm."""
+        for item in self._items:
+            if item.cart_item_id == cart_item_id:
+                if quantity <= 0:
+                    self.remove_item(cart_item_id)
+                else:
+                    item._quantity = quantity
+                    self._updated_at = datetime.utcnow()
+                return
+        raise ValueError(f"Không tìm thấy dòng sản phẩm {cart_item_id} trong giỏ hàng")
+
+    def remove_item(self, cart_item_id: int) -> None:
+        """Xóa một sản phẩm ra khỏi giỏ."""
+        self._items = [item for item in self._items if item.cart_item_id != cart_item_id]
+        self._updated_at = datetime.utcnow()
+
+    def calculate_total_weight(self) -> int:
+        """Tổng khối lượng thuần của các mặt hàng trong giỏ (gram)."""
+        return sum(item.calculate_line_weight() for item in self._items)
 
     def calculate_subtotal(self) -> int:
-        """Tính tổng tiền tạm tính của các dòng giỏ hàng."""
-        return sum(item.subtotal() for item in self.items.values())
+        """Tổng tiền hàng tạm tính trước khi áp dụng voucher và phí vận chuyển."""
+        return sum(item.calculate_line_total() for item in self._items)
 
-    def calculate_total_weight_grams(self) -> int:
-        """Tính tổng trọng lượng gram sách trong giỏ."""
-        total = 0
-        for item in self.items.values():
-            if item.edition:
-                total += item.edition.weight_gram * item.quantity
-        return total
+    def validate_drone_payload(self) -> bool:
+        """Kiểm tra điều kiện tải trọng Drone (BR05: Tổng khối lượng + 150g hộp chống sốc <= 2.000g)."""
+        total_package_weight = self.calculate_total_weight() + 150
+        return total_package_weight <= 2000
+
+    def clear(self) -> None:
+        """Làm rỗng toàn bộ giỏ hàng sau khi đã chuyển thành đơn hàng chính thức."""
+        self._items = []
+        self._updated_at = datetime.utcnow()

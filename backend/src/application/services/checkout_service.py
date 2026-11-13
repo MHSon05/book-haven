@@ -1,14 +1,15 @@
 """
 Application Service: CheckoutService
-Điều phối quy trình Đặt hàng và Checkout 10 bước bọc trong Transaction CSDL.
-Khớp 100% với Mục 4.4.3 và Slide 12 trong bài giảng của PGS. TS. Trần Đình Quế.
+Điều phối quy trình Đặt hàng và Checkout bọc trong Transaction CSDL.
+Tuân thủ UML Hình 4.3: Không dùng Enum, sử dụng chuỗi nguyên thủy (str).
 """
 import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 
-from ...domain.entities.order import Order, OrderItem, OrderStatus, PaymentMethod, Carrier
-from ...domain.entities.stock_reservation import StockReservation, ReservationStatus
+from ...domain.entities.order import Order
+from ...domain.entities.order_item import OrderItem
+from ...domain.entities.stock_reservation import StockReservation
 from ...domain.exceptions import OutOfStockException, DroneOverweightException
 from ...infrastructure.database import DatabaseSession
 from ...infrastructure.repositories.book_repository import BookRepository
@@ -16,6 +17,7 @@ from ...infrastructure.repositories.cart_repository import CartRepository
 from ...infrastructure.repositories.order_repository import OrderRepository
 from ...infrastructure.adapters.vietqr_service import VietQRService
 from ..dtos.models import CheckoutRequest, OrderResponse, OrderItemDTO, ShippingOptionsResponse, ShippingOption
+
 
 class CheckoutService:
     def __init__(
@@ -34,61 +36,55 @@ class CheckoutService:
         self.vietqr_service = vietqr_service
         self.reservation_ttl_minutes = reservation_ttl_minutes
 
-    def checkout(self, customer_id: str, request: CheckoutRequest) -> OrderResponse:
+    def checkout(self, customer_id: int, request: CheckoutRequest) -> OrderResponse:
         """
         Thực thi Quy trình Đặt hàng và Checkout 10 bước bọc trong ranh giới Giao dịch:
         """
         self.session.begin_transaction()
         try:
             # Bước 1: Nạp giỏ hàng của khách
-            cart = self.cart_repo.get_cart_by_id(request.cart_id)
-            if not cart.items:
+            cart = self.cart_repo.get_cart_by_id(int(request.cart_id))
+            if not cart or not cart.items:
                 raise ValueError("Giỏ hàng đang rỗng, không thể tiến hành đặt hàng.")
 
-            # Bước 2 & 3: Kiểm tra tồn kho khả dụng cho từng dòng ấn bản (BR02)
-            editions_map = {}
-            for edition_id, cart_item in cart.items.items():
-                edition = self.book_repo.get_edition_by_id(edition_id)
-                if not edition:
-                    raise ValueError(f"Ấn bản sách {edition_id} không tồn tại trong kho.")
-                # Kiểm tra Invariant miền: available_stock >= quantity
-                if not edition.is_available(cart_item.quantity):
+            # Bước 2 & 3: Kiểm tra tồn kho khả dụng cho từng sản phẩm (BR02)
+            products_map = {}
+            for item in cart.items:
+                pid = item.product_id
+                prod = self.book_repo.get_product_by_id(pid)
+                if not prod:
+                    raise ValueError(f"Sản phẩm {pid} không tồn tại trong kho.")
+                # Kiểm tra tồn kho khả dụng
+                if not prod.check_availability(item.quantity):
                     raise OutOfStockException(
-                        sku=edition.sku,
-                        requested=cart_item.quantity,
-                        available=edition.available_stock()
+                        sku=prod.sku,
+                        requested=item.quantity,
+                        available=prod.get_available_stock()
                     )
-                editions_map[edition_id] = edition
+                products_map[pid] = prod
 
             # Bước 4: Tính tổng trọng lượng gram & Kiểm tra tải trọng Drone
-            books_weight_grams = sum(
-                editions_map[eid].weight_gram * item.quantity
-                for eid, item in cart.items.items()
-            )
-            total_package_weight_grams = books_weight_grams + 150  # 150g màng xốp + hộp
+            total_pkg_weight_grams = cart.calculate_total_weight() + 150  # 150g màng xốp + hộp
 
-            carrier_enum = Carrier(request.carrier) if request.carrier in Carrier.__members__ else Carrier.GHN_STANDARD
-            
+            carrier = str(request.carrier or "GHN").upper()
+
             # Ràng buộc Drone tải trọng tối đa 2000g
-            if carrier_enum == Carrier.HANOI_DRONE and total_package_weight_grams > 2000:
-                raise DroneOverweightException(total_weight_grams=total_package_weight_grams, max_allowed=2000)
+            if "DRONE" in carrier and total_pkg_weight_grams > 2000:
+                raise DroneOverweightException(total_weight_grams=total_pkg_weight_grams, max_allowed=2000)
 
             # Ràng buộc Drone không hỗ trợ thanh toán tiền mặt COD
-            if carrier_enum == Carrier.HANOI_DRONE and request.payment_method == "COD":
+            if "DRONE" in carrier and str(request.payment_method).upper() == "COD":
                 raise ValueError("Giao hàng bằng Drone không hỗ trợ thanh toán tiền mặt (COD). Vui lòng thanh toán trực tuyến qua VietQR.")
 
             # Tính cước phí giao vận
-            if carrier_enum == Carrier.HANOI_DRONE:
+            if "DRONE" in carrier:
                 shipping_fee = 60000
-            elif carrier_enum == Carrier.GHN_EXPRESS:
+            elif "EXP" in carrier:
                 shipping_fee = 45000
             else:
                 shipping_fee = 25000
 
-            subtotal_amount = sum(
-                editions_map[eid].unit_price * item.quantity
-                for eid, item in cart.items.items()
-            )
+            subtotal_amount = cart.calculate_subtotal()
 
             # Giảm giá nếu có voucher
             discount_amount = 0
@@ -98,117 +94,113 @@ class CheckoutService:
                 discount_amount = shipping_fee
 
             final_amount = max(0, subtotal_amount + shipping_fee - discount_amount)
-            order_id = f"DH_{int(datetime.now().timestamp())}_{uuid.uuid4().hex[:4].upper()}"
-
-            # Bước 5: Khởi tạo Order & OrderItem (Snapshot bất biến - BR04)
-            order_items = []
-            order_items_dtos = []
-            for edition_id, cart_item in cart.items.items():
-                edition = editions_map[edition_id]
-                oi = OrderItem(
-                    order_item_id=f"ITEM_{order_id}_{edition.edition_id}",
-                    order_id=order_id,
-                    edition_id=edition.edition_id,
-                    title_snapshot=edition.title or "Sách",
-                    sku_snapshot=edition.sku,
-                    binding_type_snapshot=edition.binding_type,
-                    isbn13_snapshot=edition.isbn13,
-                    unit_price_at_purchase=edition.unit_price,
-                    quantity=cart_item.quantity,
-                    weight_gram_snapshot=edition.weight_gram
-                )
-                order_items.append(oi)
-                order_items_dtos.append(OrderItemDTO(
-                    order_item_id=oi.order_item_id,
-                    edition_id=oi.edition_id,
-                    title=oi.title_snapshot,
-                    sku=oi.sku_snapshot,
-                    binding_type=oi.binding_type_snapshot,
-                    isbn13=oi.isbn13_snapshot,
-                    unit_price=oi.unit_price_at_purchase,
-                    quantity=oi.quantity,
-                    weight_gram=oi.weight_gram_snapshot,
-                    subtotal=oi.subtotal()
-                ))
 
             initial_status = (
-                OrderStatus.PENDING_CASH
-                if request.payment_method == "COD"
-                else OrderStatus.AWAITING_PAYMENT
+                "PENDING_CASH"
+                if str(request.payment_method).upper() == "COD"
+                else "AWAITING_PAYMENT"
             )
 
+            # Bước 5: Khởi tạo Order & OrderItem
             order = Order(
-                order_id=order_id,
-                customer_id=customer_id,
+                customer_id=int(customer_id),
                 receiver_name=request.receiver_name,
                 receiver_phone=request.receiver_phone,
                 shipping_address=request.shipping_address,
-                payment_method=PaymentMethod(request.payment_method),
-                carrier=carrier_enum,
+                payment_method=str(request.payment_method).upper(),
+                carrier=carrier,
                 total_amount=subtotal_amount,
                 shipping_fee=shipping_fee,
                 discount_amount=discount_amount,
                 final_amount=final_amount,
                 status=initial_status,
-                items=order_items
+                items=[]
             )
-            # Lưu Order trước để thỏa mãn ràng buộc khóa ngoại (Foreign Key constraint)
+            # Lưu Order trước để nhận auto-increment order_id
+            assigned_order_id = self.order_repo.save_order(order)
+            order._order_id = assigned_order_id
+
+            order_items = []
+            order_items_dtos = []
+            for item in cart.items:
+                prod = products_map[item.product_id]
+                oi = OrderItem(
+                    order_id=assigned_order_id,
+                    product_id=prod.product_id,
+                    product_name_snapshot=prod.name,
+                    sku_snapshot=prod.sku,
+                    product_kind_snapshot=getattr(prod, "binding_type", "Product"),
+                    unit_price_at_purchase=prod.unit_price,
+                    quantity=item.quantity,
+                    weight_gram_snapshot=prod.weight_gram
+                )
+                order_items.append(oi)
+                order_items_dtos.append(OrderItemDTO(
+                    order_item_id=str(oi.order_item_id or ""),
+                    edition_id=str(oi.product_id),
+                    product_id=oi.product_id,
+                    title=oi.product_name_snapshot,
+                    sku=oi.sku_snapshot,
+                    binding_type=oi.product_kind_snapshot,
+                    isbn13="",
+                    unit_price=oi.unit_price_at_purchase,
+                    quantity=oi.quantity,
+                    weight_gram=oi.weight_gram_snapshot,
+                    subtotal=oi.calculate_subtotal()
+                ))
+
+            order._items = order_items
             self.order_repo.save_order(order)
 
             # Bước 6: Khóa giữ chỗ tồn kho 15 phút (Stock Reservation - BR03)
-            expires_at = (datetime.now() + timedelta(minutes=self.reservation_ttl_minutes)).isoformat()
-            reservations = []
-            for edition_id, cart_item in cart.items.items():
-                edition = editions_map[edition_id]
-                # Gọi domain method khóa giữ chỗ
-                edition.reserve_stock(cart_item.quantity)
-                self.book_repo.update_edition_stock(edition)
+            expires_at = datetime.utcnow() + timedelta(minutes=self.reservation_ttl_minutes)
+            for item in cart.items:
+                prod = products_map[item.product_id]
+                prod.reserve_stock(item.quantity)
+                self.book_repo.update_product_stock(prod)
 
                 res = StockReservation(
-                    reservation_id=f"RES_{order_id}_{edition.edition_id}",
-                    order_id=order_id,
-                    edition_id=edition.edition_id,
-                    reserved_quantity=cart_item.quantity,
+                    order_id=assigned_order_id,
+                    product_id=prod.product_id,
+                    reserved_quantity=item.quantity,
                     expires_at=expires_at,
-                    status=ReservationStatus.PENDING
+                    status="PENDING"
                 )
-                reservations.append(res)
                 self.order_repo.save_stock_reservation(res)
 
-            # Bước 7: Sinh mã VietQR động
+            # Bước 7: Sinh mã VietQR động nếu chọn chuyển khoản
             vietqr_data = None
-            if order.payment_method == PaymentMethod.VIETQR:
-                vietqr_data = self.vietqr_service.generate_payment_qr(order.order_id, order.final_amount)
+            if order.payment_method == "VIETQR":
+                vietqr_data = self.vietqr_service.generate_payment_qr(str(assigned_order_id), order.final_amount)
 
-            # Bước 8: Làm rỗng giỏ hàng (Cart.clear())
-            self.cart_repo.clear_cart(request.cart_id)
+            # Bước 8: Làm rỗng giỏ hàng
+            self.cart_repo.clear_cart(int(request.cart_id))
 
-            # Bước 9: Commit giao dịch CSDL an toàn
+            # Bước 9: Commit transaction
             self.session.commit()
 
             # Bước 10: Trả về kết quả
             return OrderResponse(
-                order_id=order.order_id,
-                customer_id=order.customer_id,
+                order_id=str(assigned_order_id),
+                customer_id=str(order.customer_id),
                 receiver_name=order.receiver_name,
                 receiver_phone=order.receiver_phone,
                 shipping_address=order.shipping_address,
-                payment_method=order.payment_method.value,
-                carrier=order.carrier.value,
+                payment_method=order.payment_method,
+                carrier=order.carrier,
                 total_amount=order.total_amount,
                 shipping_fee=order.shipping_fee,
                 discount_amount=order.discount_amount,
                 final_amount=order.final_amount,
-                status=order.status.value,
+                status=order.status,
                 tracking_code=order.tracking_code,
-                created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                created_at=order.created_at.strftime("%Y-%m-%d %H:%M:%S") if isinstance(order.created_at, datetime) else str(order.created_at),
                 items=order_items_dtos,
                 vietqr_data=vietqr_data,
-                reservation_expires_at=expires_at
+                reservation_expires_at=expires_at.strftime("%Y-%m-%d %H:%M:%S")
             )
 
         except Exception as e:
-            # Tự động Rollback nếu có bất kỳ ngoại lệ nào
             self.session.rollback()
             raise e
 
@@ -216,9 +208,12 @@ class CheckoutService:
         """Tính tổng trọng lượng bưu phẩm (+150g bao bì) và kiểm tra điều kiện giao Drone (<= 2.000g)."""
         total_package_weight = 150
         if cart_id:
-            cart = self.cart_repo.get_cart_by_id(cart_id)
-            if cart:
-                total_package_weight += cart.calculate_total_weight_grams()
+            try:
+                cart = self.cart_repo.get_cart_by_id(int(cart_id))
+                if cart:
+                    total_package_weight += cart.calculate_total_weight()
+            except Exception:
+                pass
 
         is_drone_eligible = total_package_weight <= 2000
         drone_disabled_msg = None

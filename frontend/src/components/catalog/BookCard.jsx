@@ -20,6 +20,10 @@ export default function BookCard({ book, onSelect }) {
           alt={book.title}
           className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
           loading="lazy"
+          onError={(e) => {
+            e.currentTarget.onerror = null;
+            e.currentTarget.src = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&q=80&w=600';
+          }}
         />
         <span className="absolute top-2.5 left-2.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-crimson-700 text-white shadow-sm">
           {book.category_name || 'Văn học'}

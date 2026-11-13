@@ -1,19 +1,20 @@
 """
 Application Service: PaymentService
 Xử lý giao dịch thanh toán VietQR, đối soát Webhook ngân hàng và cập nhật trạng thái đơn hàng.
+Tuân thủ UML Hình 4.3: Không dùng Enum, sử dụng chuỗi nguyên thủy (str).
 """
 import re
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from ...domain.entities.order import Order, OrderStatus, PaymentMethod
+from ...domain.entities.order import Order
 from ...domain.entities.payment import Payment
-from ...domain.entities.stock_reservation import ReservationStatus
 from ...domain.exceptions import EntityNotFoundException, InvalidOrderStateException
 from ...infrastructure.database import DatabaseSession
 from ...infrastructure.repositories.order_repository import OrderRepository
 from ...infrastructure.repositories.book_repository import BookRepository
 from ..dtos.models import OrderResponse, OrderItemDTO
+
 
 class PaymentService:
     def __init__(
@@ -26,50 +27,50 @@ class PaymentService:
         self.order_repo = order_repo
         self.book_repo = book_repo
 
-    def confirm_payment(self, order_id: str, transaction_code: Optional[str] = None) -> OrderResponse:
+    def confirm_payment(self, order_id: int, transaction_code: Optional[str] = None) -> OrderResponse:
         """
         Khách hàng xác nhận 'Tôi đã chuyển khoản thành công' hoặc hệ thống nhận tín hiệu thanh toán.
-        Thực hiện trừ kho chính thức (confirm_deduction) và chuyển trạng thái đơn sang PAID.
+        Thực hiện trừ kho chính thức (commit_stock) và chuyển trạng thái đơn sang PAID.
         """
         self.session.begin_transaction()
         try:
-            order = self.order_repo.get_order_by_id(order_id)
+            order = self.order_repo.get_order_by_id(int(order_id))
             if not order:
-                raise EntityNotFoundException("Order", order_id)
+                raise EntityNotFoundException("Order", str(order_id))
 
-            if order.status == OrderStatus.PAID:
-                # Đã thanh toán trước đó
+            if order.status == "PAID":
                 self.session.commit()
                 return self._to_order_response(order)
 
-            if order.status != OrderStatus.AWAITING_PAYMENT:
+            if order.status not in ("AWAITING_PAYMENT", "PENDING_PAYMENT"):
                 raise InvalidOrderStateException(
-                    f"Đơn hàng đang ở trạng thái '{order.status.value}', không thể xác nhận thanh toán."
+                    f"Đơn hàng đang ở trạng thái '{order.status}', không thể xác nhận thanh toán."
                 )
 
             # Chuyển trạng thái Order sang PAID
-            order.mark_paid()
+            order.transition_to("PAID")
             self.order_repo.save_order(order)
 
             # Khấu trừ kho chính thức (stock_on_hand -= qty, stock_reserved -= qty)
             for item in order.items:
-                edition = self.book_repo.get_edition_by_id(item.edition_id)
-                if edition:
-                    edition.confirm_deduction(item.quantity)
-                    self.book_repo.update_edition_stock(edition)
+                prod = self.book_repo.get_product_by_id(item.product_id)
+                if prod:
+                    prod.commit_stock(item.quantity)
+                    self.book_repo.update_product_stock(prod)
 
             # Cập nhật trạng thái bản ghi giữ chỗ sang COMMITTED qua OrderRepository
-            self.order_repo.update_reservations_status_by_order(order_id, ReservationStatus.COMMITTED)
+            self.order_repo.update_reservations_status_by_order(int(order_id), "COMMITTED")
 
             # Ghi nhận thực thể Payment và lưu chứng từ thanh toán (BR06)
             txn_code = transaction_code or f"TXN_{order_id}_{int(datetime.now().timestamp())}"
             payment = Payment(
-                payment_id=f"PAY_{order_id}",
-                order_id=order_id,
-                payment_method=order.payment_method.value,
+                order_id=int(order_id),
+                payment_method=order.payment_method,
                 amount=order.final_amount,
+                transaction_code=txn_code,
+                status="SUCCESS",
+                paid_at=datetime.utcnow()
             )
-            payment.mark_success(txn_code)
             self.order_repo.save_payment_record(payment)
 
             self.session.commit()
@@ -87,15 +88,15 @@ class PaymentService:
         transfer_amount = payload.get("amount") or payload.get("transferAmount") or 0
         trans_id = payload.get("transaction_id") or payload.get("referenceCode") or "WEBHOOK_TXN"
 
-        # Trích xuất mã đơn hàng DH_... từ nội dung chuyển khoản
-        match = re.search(r"(DH_\d+_[A-F0-9]+)", content.upper())
+        # Trích xuất order_id từ nội dung chuyển khoản
+        match = re.search(r"(\d+)", content)
         if not match:
             return {
                 "success": False,
-                "message": f"Không tìm thấy mã đơn hàng BookHaven hợp lệ trong nội dung: '{content}'"
+                "message": f"Không tìm thấy mã đơn hàng hợp lệ trong nội dung: '{content}'"
             }
 
-        order_id = match.group(1)
+        order_id = int(match.group(1))
         order = self.order_repo.get_order_by_id(order_id)
         if not order:
             return {"success": False, "message": f"Đơn hàng {order_id} không tồn tại trong hệ thống."}
@@ -115,18 +116,18 @@ class PaymentService:
             "message": "Thanh toán tự động thành công qua Webhook ngân hàng."
         }
 
-    def get_order_status(self, order_id: str) -> Dict[str, Any]:
-        order = self.order_repo.get_order_by_id(order_id)
+    def get_order_status(self, order_id: int) -> Dict[str, Any]:
+        order = self.order_repo.get_order_by_id(int(order_id))
         if not order:
-            raise EntityNotFoundException("Order", order_id)
+            raise EntityNotFoundException("Order", str(order_id))
 
-        total_weight = sum(item.total_weight() for item in order.items) + 150 if order.items else 380
+        total_weight = order.calculate_total_weight() + 150 if order.items else 380
 
         return {
             "order_id": order.order_id,
-            "status": order.status.value,
-            "payment_method": order.payment_method.value,
-            "carrier": order.carrier.value if order.carrier else None,
+            "status": order.status,
+            "payment_method": order.payment_method,
+            "carrier": order.carrier,
             "tracking_code": order.tracking_code,
             "final_amount": order.final_amount,
             "total_amount": order.total_amount,
@@ -138,8 +139,8 @@ class PaymentService:
             "updated_at": str(order.updated_at) if order.updated_at else None,
             "items": [
                 {
-                    "edition_id": it.edition_id,
-                    "title": it.title_snapshot,
+                    "product_id": it.product_id,
+                    "title": it.product_name_snapshot,
                     "quantity": it.quantity,
                     "unit_price": it.unit_price_at_purchase,
                     "weight_gram": it.weight_gram_snapshot
@@ -150,33 +151,34 @@ class PaymentService:
     def _to_order_response(self, order: Order) -> OrderResponse:
         items_dtos = [
             OrderItemDTO(
-                order_item_id=oi.order_item_id,
-                edition_id=oi.edition_id,
-                title=oi.title_snapshot,
+                order_item_id=str(oi.order_item_id or ""),
+                edition_id=str(oi.product_id),
+                product_id=oi.product_id,
+                title=oi.product_name_snapshot,
                 sku=oi.sku_snapshot,
-                binding_type=oi.binding_type_snapshot,
-                isbn13=oi.isbn13_snapshot,
+                binding_type=oi.product_kind_snapshot,
+                isbn13="",
                 unit_price=oi.unit_price_at_purchase,
                 quantity=oi.quantity,
                 weight_gram=oi.weight_gram_snapshot,
-                subtotal=oi.subtotal()
+                subtotal=oi.calculate_subtotal()
             )
             for oi in order.items
         ]
         return OrderResponse(
-            order_id=order.order_id,
-            customer_id=order.customer_id,
+            order_id=str(order.order_id),
+            customer_id=str(order.customer_id),
             receiver_name=order.receiver_name,
             receiver_phone=order.receiver_phone,
             shipping_address=order.shipping_address,
-            payment_method=order.payment_method.value,
-            carrier=order.carrier.value if order.carrier else "GHN_STANDARD",
+            payment_method=order.payment_method,
+            carrier=order.carrier or "GHN",
             total_amount=order.total_amount,
             shipping_fee=order.shipping_fee,
             discount_amount=order.discount_amount,
             final_amount=order.final_amount,
-            status=order.status.value,
+            status=order.status,
             tracking_code=order.tracking_code,
-            created_at=order.created_at,
+            created_at=order.created_at.strftime("%Y-%m-%d %H:%M:%S") if isinstance(order.created_at, datetime) else str(order.created_at),
             items=items_dtos
         )

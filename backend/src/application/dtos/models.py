@@ -128,11 +128,11 @@ class SemanticSearchRequest(BaseModel):
     limit: int = 5
 
 class SearchResultItem(BaseModel):
-    book_id: str
+    book_id: Any
     title: str
     author_name: str
     publisher_name: str
-    category_id: Optional[str] = None
+    category_id: Optional[Any] = None
     category_name: str
     description: str
     cover_image: Optional[str] = None
@@ -153,12 +153,12 @@ class ChatMessageRequest(BaseModel):
     message: str
 
 class BookCardDTO(BaseModel):
-    book_id: str
+    book_id: Any
     title: str
     author_name: str
     unit_price: int
     binding_type: str
-    edition_id: str
+    edition_id: Any
     cover_image: Optional[str] = None
     available_stock: int
 

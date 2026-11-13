@@ -37,7 +37,7 @@ export default function SearchResultsBanner({
           </h2>
           <p className="text-xs text-stone-500">
             {searchMode === 'SEMANTIC'
-              ? `Tìm kiếm cốt truyện AI • Tìm thấy ${resultCount} tác phẩm tương đồng cao`
+              ? `Tìm kiếm AI theo nội dung sách • Tìm thấy ${resultCount} tác phẩm tương đồng cao`
               : searchMode === 'IMAGE'
               ? `Nhận diện thị giác bìa sách • Tìm thấy ${resultCount} tác phẩm khớp chính xác`
               : `Tìm thấy ${resultCount} tác phẩm khớp từ khóa`}

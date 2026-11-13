@@ -3,11 +3,13 @@ Application Service: ChatbotService
 Điều phối Trợ lý ảo AI Bookie (RAG - Retrieval-Augmented Generation).
 Tuân thủ nghiêm ngặt Quy tắc Grounding BR08 và kịch bản tư vấn sách trong Báo cáo Thiết kế.
 """
-from typing import List, Dict, Any, Optional
-from ...infrastructure.repositories.book_repository import BookRepository
+
+from typing import Any, Dict, List, Optional
+
 from ...infrastructure.adapters.cloudflare_llm import CloudflareLLMAdapter
+from ...infrastructure.repositories.book_repository import BookRepository
+from ..dtos.models import BookCardDTO, ChatMessageResponse
 from .search_service import SearchService
-from ..dtos.models import ChatMessageResponse, BookCardDTO
 
 SYSTEM_PROMPT_TEMPLATE = """Bạn là Bookie, trợ lý ảo AI thông minh, nhiệt huyết và là chuyên gia tư vấn văn hóa đọc của Hiệu sách Trực tuyến BookHaven.
 
@@ -49,12 +51,13 @@ NGUYÊN TẮC PHẢN HỒI:
    - Tiếng Việt tự nhiên, lịch sự, truyền cảm hứng, độ dài vừa vặn (khoảng 2-4 đoạn ngắn hoặc 3-5 câu), không dài dòng thừa thãi.
 """
 
+
 class ChatbotService:
     def __init__(
         self,
         book_repo: BookRepository,
         search_service: SearchService,
-        llm_adapter: Optional[CloudflareLLMAdapter] = None
+        llm_adapter: Optional[CloudflareLLMAdapter] = None,
     ):
         self.book_repo = book_repo
         self.search_service = search_service
@@ -73,37 +76,96 @@ class ChatbotService:
 
         # Từ khóa định danh việc tìm/hỏi về sách rõ rệt
         book_explicit_keywords = [
-            "sách", "cuốn", "tác phẩm", "tác giả", "tiểu thuyết", "truyện",
-            "ấn bản", "bìa cứng", "bìa mềm", "đọc sách", "tìm sách", "mua sách",
-            "gợi ý sách", "tư vấn sách", "giá bao nhiêu", "còn hàng không"
+            "sách",
+            "cuốn",
+            "tác phẩm",
+            "tác giả",
+            "tiểu thuyết",
+            "truyện",
+            "ấn bản",
+            "bìa cứng",
+            "bìa mềm",
+            "đọc sách",
+            "tìm sách",
+            "mua sách",
+            "gợi ý sách",
+            "tư vấn sách",
+            "giá bao nhiêu",
+            "còn hàng không",
         ]
         has_book_intent = any(kw in msg for kw in book_explicit_keywords)
 
         # 1. Nhóm hỏi danh tính kỹ thuật / mô hình AI
         tech_keywords = [
-            "mô hình nào", "model nào", "mô hình gì", "bạn là ai", "bạn tên gì",
-            "ai tạo ra", "nguồn gốc", "llama", "chatgpt", "gpt", "dùng ai gì",
-            "công nghệ gì", "kiến trúc", "rag là gì", "dhash", "ai của tôi",
-            "thuật toán gì", "mô hình ngôn ngữ"
+            "mô hình nào",
+            "model nào",
+            "mô hình gì",
+            "bạn là ai",
+            "bạn tên gì",
+            "ai tạo ra",
+            "nguồn gốc",
+            "llama",
+            "chatgpt",
+            "gpt",
+            "dùng ai gì",
+            "công nghệ gì",
+            "kiến trúc",
+            "rag là gì",
+            "dhash",
+            "ai của tôi",
+            "thuật toán gì",
+            "mô hình ngôn ngữ",
         ]
-        if any(kw in msg for kw in tech_keywords) and not ("sách về" in msg or "cuốn sách" in msg):
+        if any(kw in msg for kw in tech_keywords) and not (
+            "sách về" in msg or "cuốn sách" in msg
+        ):
             return "identity_tech"
 
         # 2. Nhóm chào hỏi / cảm ơn / xã giao
         greetings = [
-            "xin chào", "chào bạn", "chào em", "chào bot", "chào bookie", "chào", "hello",
-            "hi bookie", "cảm ơn", "thanks", "thank you", "tuyệt vời", "pro quá",
-            "tạm biệt", "bye", "goodbye", "bạn khỏe không"
+            "xin chào",
+            "chào bạn",
+            "chào em",
+            "chào bot",
+            "chào bookie",
+            "chào",
+            "hello",
+            "hi bookie",
+            "cảm ơn",
+            "thanks",
+            "thank you",
+            "tuyệt vời",
+            "pro quá",
+            "tạm biệt",
+            "bye",
+            "goodbye",
+            "bạn khỏe không",
         ]
-        is_greeting = any(msg == g or msg.startswith(g + " ") or msg.endswith(" " + g) for g in greetings)
+        is_greeting = any(
+            msg == g or msg.startswith(g + " ") or msg.endswith(" " + g)
+            for g in greetings
+        )
         if is_greeting and not has_book_intent:
             return "greeting_chitchat"
 
         # 3. Nhóm chính sách cửa hàng & dịch vụ độc quyền
         policy_keywords = [
-            "drone", "máy bay", "vận chuyển", "phí ship", "giao hàng bao lâu",
-            "thanh toán", "vietqr", "chuyển khoản", "ngân hàng", "mbbank",
-            "cod", "đổi trả", "hoàn tiền", "cửa hàng ở đâu", "địa chỉ", "bảo hành"
+            "drone",
+            "máy bay",
+            "vận chuyển",
+            "phí ship",
+            "giao hàng bao lâu",
+            "thanh toán",
+            "vietqr",
+            "chuyển khoản",
+            "ngân hàng",
+            "mbbank",
+            "cod",
+            "đổi trả",
+            "hoàn tiền",
+            "cửa hàng ở đâu",
+            "địa chỉ",
+            "bảo hành",
         ]
         if any(kw in msg for kw in policy_keywords) and not has_book_intent:
             return "policy_service"
@@ -121,7 +183,7 @@ class ChatbotService:
         if not clean_msg:
             return ChatMessageResponse(
                 reply="Dạ Bookie có thể giúp gì cho bạn hôm nay ạ? Bạn đang muốn tìm sách về chủ đề gì?",
-                suggested_books=[]
+                suggested_books=[],
             )
 
         intent = self.classify_intent(clean_msg)
@@ -135,7 +197,9 @@ class ChatbotService:
                 "thông minh, không đính kèm thẻ sách khi người dùng không hỏi mua sách."
             )
             system_prompt = SYSTEM_PROMPT_TEMPLATE.format(context_books=context_str)
-            llm_reply = self.llm_adapter.generate_chat_response(system_prompt, clean_msg)
+            llm_reply = self.llm_adapter.generate_chat_response(
+                system_prompt, clean_msg
+            )
             return ChatMessageResponse(reply=llm_reply, suggested_books=[])
 
         elif intent == "greeting_chitchat":
@@ -145,7 +209,9 @@ class ChatbotService:
                 "của BookHaven và sẵn sàng hỗ trợ độc giả chọn sách."
             )
             system_prompt = SYSTEM_PROMPT_TEMPLATE.format(context_books=context_str)
-            llm_reply = self.llm_adapter.generate_chat_response(system_prompt, clean_msg)
+            llm_reply = self.llm_adapter.generate_chat_response(
+                system_prompt, clean_msg
+            )
             return ChatMessageResponse(reply=llm_reply, suggested_books=[])
 
         elif intent == "policy_service":
@@ -155,21 +221,29 @@ class ChatbotService:
                 "Hãy giải đáp chi tiết, chính xác các chính sách này mà không đính kèm thẻ sách ngẫu nhiên."
             )
             system_prompt = SYSTEM_PROMPT_TEMPLATE.format(context_books=context_str)
-            llm_reply = self.llm_adapter.generate_chat_response(system_prompt, clean_msg)
+            llm_reply = self.llm_adapter.generate_chat_response(
+                system_prompt, clean_msg
+            )
             return ChatMessageResponse(reply=llm_reply, suggested_books=[])
 
         # ----------------------------------------------------
         # intent == "book_search": RAG đầy đủ với Quy tắc Grounding BR08
         # ----------------------------------------------------
         # 1. Retrieval: Sử dụng hoàn toàn Semantic Search AI (all-MiniLM-L6-v2)
-        search_res = self.search_service.search_semantic(clean_msg, limit=3, min_threshold=0.35)
+        search_res = self.search_service.search_semantic(
+            clean_msg, limit=3, min_threshold=0.35
+        )
 
         # 2. Filter & Trích xuất thông tin sách
         suggested_books: List[BookCardDTO] = []
         context_lines: List[str] = []
 
         clean_lower = clean_msg.lower()
-        query_words = [w for w in clean_lower.replace(",", " ").replace(".", " ").split() if len(w) > 2]
+        query_words = [
+            w
+            for w in clean_lower.replace(",", " ").replace(".", " ").split()
+            if len(w) > 2
+        ]
 
         for item in search_res.results:
             # Tiêu chí liên quan thực sự:
@@ -178,7 +252,11 @@ class ChatbotService:
             is_relevant = item.similarity_score >= 0.40 or has_word_match
 
             # Ưu tiên kết quả hàng đầu nếu có điểm tương đối
-            if not is_relevant and len(search_res.results) > 0 and search_res.results[0].book_id == item.book_id:
+            if (
+                not is_relevant
+                and len(search_res.results) > 0
+                and search_res.results[0].book_id == item.book_id
+            ):
                 if item.similarity_score >= 0.35:
                     is_relevant = True
 
@@ -189,16 +267,18 @@ class ChatbotService:
             for ed in editions:
                 avail = ed.available_stock()
                 if avail > 0:
-                    suggested_books.append(BookCardDTO(
-                        book_id=item.book_id,
-                        title=item.title,
-                        author_name=item.author_name,
-                        unit_price=ed.unit_price,
-                        binding_type=ed.binding_type,
-                        edition_id=ed.edition_id,
-                        cover_image=item.cover_image,
-                        available_stock=avail
-                    ))
+                    suggested_books.append(
+                        BookCardDTO(
+                            book_id=item.book_id,
+                            title=item.title,
+                            author_name=item.author_name,
+                            unit_price=ed.unit_price,
+                            binding_type=ed.binding_type,
+                            edition_id=ed.edition_id,
+                            cover_image=item.cover_image,
+                            available_stock=avail,
+                        )
+                    )
                     context_lines.append(
                         f"- Tên: '{item.title}' | Tác giả: {item.author_name} | Bản: {ed.binding_type} | "
                         f"Giá: {ed.unit_price:,} đ | Còn: {avail} cuốn | Tóm tắt: {item.description[:120]}"
@@ -221,7 +301,4 @@ class ChatbotService:
         llm_reply = self.llm_adapter.generate_chat_response(system_prompt, clean_msg)
 
         # 5. Đóng gói kết quả
-        return ChatMessageResponse(
-            reply=llm_reply,
-            suggested_books=suggested_books
-        )
+        return ChatMessageResponse(reply=llm_reply, suggested_books=suggested_books)

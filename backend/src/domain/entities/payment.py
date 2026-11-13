@@ -1,35 +1,73 @@
 """
 Domain Entity: Payment
-Quản lý chứng từ thanh toán dòng tiền (VietQR / COD) phục vụ đối soát doanh thu thực thu (BR06).
+Chứng từ ghi nhận dòng tiền thanh toán đơn hàng (VietQR / COD).
+Khớp 100% với Hình 4.3. KHÔNG dùng Enum - payment_method, status là chuỗi (string).
 """
-from dataclasses import dataclass
-from datetime import datetime
-from enum import Enum
 from typing import Optional
+from datetime import datetime
 
 
-class PaymentStatus(str, Enum):
-    PENDING = "PENDING"
-    SUCCESS = "SUCCESS"
-    FAILED = "FAILED"
-
-
-@dataclass
 class Payment:
-    payment_id: str
-    order_id: str
-    payment_method: str
-    amount: int
-    transaction_code: Optional[str] = None
-    status: PaymentStatus = PaymentStatus.PENDING
-    paid_at: Optional[str] = None
+    def __init__(
+        self,
+        payment_id: Optional[int] = None,
+        order_id: int = 0,
+        payment_method: str = "VIETQR",
+        amount: int = 0,
+        transaction_code: Optional[str] = None,
+        status: str = "PENDING",
+        paid_at: Optional[datetime] = None,
+    ):
+        self._payment_id = payment_id
+        self._order_id = order_id
+        self._payment_method = payment_method
+        self._amount = amount
+        self._transaction_code = transaction_code
+        self._status = status
+        self._paid_at = paid_at
 
-    def mark_success(self, transaction_code: str) -> None:
-        """Ghi nhận giao dịch thanh toán thành công kèm mã đối soát ngân hàng."""
-        self.transaction_code = transaction_code
-        self.status = PaymentStatus.SUCCESS
-        self.paid_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    @property
+    def payment_id(self) -> Optional[int]:
+        return self._payment_id
 
-    def mark_failed(self) -> None:
-        """Đánh dấu giao dịch thanh toán thất bại."""
-        self.status = PaymentStatus.FAILED
+    @property
+    def order_id(self) -> int:
+        return self._order_id
+
+    @property
+    def payment_method(self) -> str:
+        return self._payment_method
+
+    @property
+    def amount(self) -> int:
+        return self._amount
+
+    @property
+    def transaction_code(self) -> Optional[str]:
+        return self._transaction_code
+
+    @property
+    def status(self) -> str:
+        return self._status
+
+    @property
+    def paid_at(self) -> Optional[datetime]:
+        return self._paid_at
+
+    # Business Operations from UML
+    def verify_transaction(self, tx_code: str) -> bool:
+        """Xác thực mã giao dịch ngân hàng khớp lệnh đối soát."""
+        if not tx_code or len(tx_code.strip()) < 4:
+            return False
+        return self._transaction_code == tx_code or self._transaction_code is None
+
+    def mark_as_paid(self, tx_code: Optional[str] = None) -> None:
+        """Đánh dấu thanh toán thành công và ghi nhận thời điểm khớp lệnh."""
+        self._status = "SUCCESS"
+        self._paid_at = datetime.utcnow()
+        if tx_code:
+            self._transaction_code = tx_code
+
+    def is_expired(self) -> bool:
+        """Thanh toán quá hạn khi đơn hàng giữ chỗ quá 15 phút chưa khớp tiền."""
+        return self._status == "FAILED" or self._status == "EXPIRED"

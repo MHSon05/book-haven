@@ -175,7 +175,7 @@ export default function App() {
   // Initial Load: Categories & Books
   const loadInitialBooks = useCallback(async () => {
     try {
-      const data = await catalogApi.getBooks({ limit: 250 });
+      const data = await catalogApi.getBooks({ limit: 500 });
       setBooks(data.books || []);
     } catch (err) {
       console.error('Error loading books:', err);

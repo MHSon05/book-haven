@@ -1,107 +1,172 @@
 """
-Domain Entity: Order & OrderItem
-Quản lý trạng thái đơn hàng, snapshot tài chính bất biến và các quy tắc chuyển đổi trạng thái.
+Domain Entity: Order
+Đơn hàng chính thức trong hệ thống BookHaven.
+Khớp 100% với Hình 4.3. KHÔNG dùng Enum - status, payment_method, carrier là chuỗi (string).
 """
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import List, Optional
-from ..exceptions import InvalidOrderStateException
-
-class OrderStatus(str, Enum):
-    AWAITING_PAYMENT = "AWAITING_PAYMENT"
-    PAID = "PAID"
-    PENDING_CASH = "PENDING_CASH"  # Đối với đơn COD
-    PACKED = "PACKED"
-    SHIPPING = "SHIPPING"
-    DELIVERED = "DELIVERED"
-    CANCELLED = "CANCELLED"
-
-class PaymentMethod(str, Enum):
-    VIETQR = "VIETQR"
-    COD = "COD"
-
-class Carrier(str, Enum):
-    GHN_STANDARD = "GHN_STANDARD"
-    GHN_EXPRESS = "GHN_EXPRESS"
-    HANOI_DRONE = "HANOI_DRONE"
-
-@dataclass
-class OrderItem:
-    """OrderItem là bản chụp (Snapshot) tài chính bất biến tại thời điểm đặt hàng (BR04)."""
-    order_item_id: str
-    order_id: str
-    edition_id: str
-    title_snapshot: str
-    sku_snapshot: str
-    binding_type_snapshot: str
-    isbn13_snapshot: str
-    unit_price_at_purchase: int
-    quantity: int
-    weight_gram_snapshot: int
-
-    def subtotal(self) -> int:
-        return self.unit_price_at_purchase * self.quantity
-
-    def total_weight(self) -> int:
-        return self.weight_gram_snapshot * self.quantity
+from typing import Optional, List, Dict, Any
+from datetime import datetime
+from src.domain.entities.order_item import OrderItem
 
 
-@dataclass
 class Order:
-    order_id: str
-    customer_id: str
-    receiver_name: str
-    receiver_phone: str
-    shipping_address: str
-    payment_method: PaymentMethod
-    carrier: Carrier
-    total_amount: int
-    shipping_fee: int
-    discount_amount: int
-    final_amount: int
-    status: OrderStatus = OrderStatus.AWAITING_PAYMENT
-    items: List[OrderItem] = field(default_factory=list)
-    tracking_code: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    # Các trạng thái đơn hàng hợp lệ theo chuẩn chuỗi
+    VALID_STATUSES = {
+        "AWAITING_PAYMENT",
+        "PENDING_PAYMENT",
+        "PAID",
+        "PENDING_CASH",
+        "PACKED",
+        "SHIPPING",
+        "DELIVERED",
+        "CANCELLED",
+    }
 
-    def mark_paid(self):
-        """Chuyển trạng thái sang PAID sau khi xác thực chuyển khoản thành công."""
-        if self.status != OrderStatus.AWAITING_PAYMENT:
-            raise InvalidOrderStateException(
-                f"Không thể chuyển sang PAID từ trạng thái '{self.status}'."
-            )
-        self.status = OrderStatus.PAID
+    # Bảng chuyển trạng thái hợp lệ (Finite State Machine - Chương 2)
+    TRANSITIONS = {
+        "AWAITING_PAYMENT": {"PAID", "CANCELLED"},
+        "PENDING_PAYMENT": {"PAID", "CANCELLED"},
+        "PENDING_CASH": {"PACKED", "CANCELLED"},
+        "PAID": {"PACKED", "CANCELLED"},
+        "PACKED": {"SHIPPING", "CANCELLED"},
+        "SHIPPING": {"DELIVERED", "CANCELLED"},
+        "DELIVERED": set(),
+        "CANCELLED": set(),
+    }
 
-    def mark_packed(self):
-        """Thủ kho đóng gói sách, bọc màng xốp hoàn thành."""
-        if self.status not in (OrderStatus.PAID, OrderStatus.PENDING_CASH):
-            raise InvalidOrderStateException(
-                f"Đơn hàng phải ở trạng thái PAID hoặc PENDING_CASH mới có thể đóng gói."
-            )
-        self.status = OrderStatus.PACKED
+    def __init__(
+        self,
+        order_id: Optional[int] = None,
+        customer_id: int = 0,
+        receiver_name: str = "",
+        receiver_phone: str = "",
+        shipping_address: str = "",
+        payment_method: str = "VIETQR",
+        carrier: str = "GHN",
+        tracking_code: Optional[str] = None,
+        total_amount: int = 0,
+        shipping_fee: int = 0,
+        discount_amount: int = 0,
+        final_amount: int = 0,
+        status: str = "AWAITING_PAYMENT",
+        items: Optional[List[OrderItem]] = None,
+        created_at: Optional[datetime] = None,
+        updated_at: Optional[datetime] = None,
+    ):
+        self._order_id = order_id
+        self._customer_id = customer_id
+        self._receiver_name = receiver_name
+        self._receiver_phone = receiver_phone
+        self._shipping_address = shipping_address
+        self._payment_method = payment_method
+        self._carrier = carrier
+        self._tracking_code = tracking_code
+        self._total_amount = total_amount
+        self._shipping_fee = shipping_fee
+        self._discount_amount = discount_amount
+        self._final_amount = final_amount
+        self._status = status
+        self._items = items or []
+        self._payment = None
+        self._created_at = created_at or datetime.utcnow()
+        self._updated_at = updated_at or datetime.utcnow()
 
-    def mark_dispatched(self, carrier: Carrier, tracking_code: str):
-        """Bàn giao bưu kiện cho đơn vị vận chuyển (GHN hoặc Hanoi Drone)."""
-        if self.status != OrderStatus.PACKED:
-            raise InvalidOrderStateException("Đơn hàng phải được đóng gói trước khi bàn giao giao vận.")
-        self.carrier = carrier
-        self.tracking_code = tracking_code
-        self.status = OrderStatus.SHIPPING
+    @property
+    def order_id(self) -> Optional[int]:
+        return self._order_id
 
-    def mark_delivered(self):
-        """Giao hàng thành công đến tay độc giả."""
-        if self.status != OrderStatus.SHIPPING:
-            raise InvalidOrderStateException("Đơn hàng phải đang trong trạng thái SHIPPING mới có thể giao thành công.")
-        self.status = OrderStatus.DELIVERED
+    @property
+    def customer_id(self) -> int:
+        return self._customer_id
 
-    def cancel(self):
-        """Hủy đơn hàng và giải phóng giữ chỗ kho."""
-        if self.status in (OrderStatus.SHIPPING, OrderStatus.DELIVERED):
-            raise InvalidOrderStateException("Không thể hủy đơn hàng đang giao hoặc đã giao thành công.")
-        self.status = OrderStatus.CANCELLED
+    @property
+    def receiver_name(self) -> str:
+        return self._receiver_name
 
-    def calculate_total_weight_grams(self) -> int:
-        """Tổng trọng lượng sách + 150g màng xốp và hộp carton đóng gói."""
-        books_weight = sum(item.total_weight() for item in self.items)
-        return books_weight + 150
+    @property
+    def receiver_phone(self) -> str:
+        return self._receiver_phone
+
+    @property
+    def shipping_address(self) -> str:
+        return self._shipping_address
+
+    @property
+    def payment_method(self) -> str:
+        return self._payment_method
+
+    @property
+    def carrier(self) -> str:
+        return self._carrier
+
+    @property
+    def tracking_code(self) -> Optional[str]:
+        return self._tracking_code
+
+    @property
+    def total_amount(self) -> int:
+        return self._total_amount
+
+    @property
+    def shipping_fee(self) -> int:
+        return self._shipping_fee
+
+    @property
+    def discount_amount(self) -> int:
+        return self._discount_amount
+
+    @property
+    def final_amount(self) -> int:
+        return self._final_amount
+
+    @property
+    def status(self) -> str:
+        return self._status
+
+    @property
+    def items(self) -> List[OrderItem]:
+        return self._items
+
+    @property
+    def created_at(self) -> datetime:
+        return self._created_at
+
+    @property
+    def updated_at(self) -> datetime:
+        return self._updated_at
+
+    # Business Operations from UML
+    def calculate_grand_total(self) -> int:
+        """Tổng thanh toán cuối cùng = Tổng tiền hàng + Phí vận chuyển - Giảm giá."""
+        subtotal = sum(item.calculate_subtotal() for item in self._items) if self._items else self._total_amount
+        self._total_amount = subtotal
+        self._final_amount = max(0, subtotal + self._shipping_fee - self._discount_amount)
+        return self._final_amount
+
+    def calculate_total_weight(self) -> int:
+        """Tổng trọng lượng các kiện hàng trong đơn."""
+        return sum(item.weight_gram_snapshot * item.quantity for item in self._items)
+
+    def attach_payment(self, payment) -> None:
+        """Gắn chứng từ thanh toán vào đơn."""
+        self._payment = payment
+
+    def transition_to(self, new_status: str) -> None:
+        """Chuyển đổi trạng thái đơn hàng theo FSM hợp lệ."""
+        if new_status not in self.VALID_STATUSES:
+            raise ValueError(f"Trạng thái {new_status} không hợp lệ trong hệ thống")
+        allowed = self.TRANSITIONS.get(self._status, set())
+        if new_status not in allowed:
+            raise ValueError(f"Không thể chuyển trạng thái đơn hàng từ {self._status} sang {new_status}")
+        self._status = new_status
+        self._updated_at = datetime.utcnow()
+
+    def can_cancel(self) -> bool:
+        """Đơn hàng chỉ được phép hủy khi chưa bàn giao sang khâu đóng gói hoặc vận chuyển."""
+        return self._status in ("AWAITING_PAYMENT", "PENDING_PAYMENT", "PENDING_CASH", "PAID")
+
+    def cancel(self, reason: str = "") -> bool:
+        """Thực hiện hủy đơn hàng nếu thỏa mãn điều kiện."""
+        if not self.can_cancel():
+            return False
+        self.transition_to("CANCELLED")
+        return True

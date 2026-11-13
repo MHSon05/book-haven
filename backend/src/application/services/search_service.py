@@ -191,27 +191,27 @@ class SearchService:
 
         results = []
         for bid, h_score, c_sim in top_candidates:
-            book = self.book_repo.get_book_entity_by_id(bid)
-            if not book or not book.is_searchable() or not book.editions:
+            book_dict = self.book_repo.get_book_by_id(int(bid))
+            if not book_dict or not book_dict.get("is_active"):
                 continue
 
-            min_p = book.min_price()
-            max_p = book.max_price()
-            total_avail = book.total_available_stock()
+            min_p = book_dict.get("unit_price", 0)
+            max_p = book_dict.get("unit_price", 0)
+            total_avail = max(0, (book_dict.get("stock_on_hand", 0) - book_dict.get("stock_reserved", 0)))
 
             # Rút trích câu tóm tắt liên quan ngữ nghĩa
-            desc = book.description or ""
+            desc = book_dict.get("description") or ""
             explanation = f"Độ tương đồng cốt truyện: {min(99, int(h_score * 100))}%. " + (desc[:120] + "..." if len(desc) > 120 else desc)
 
             results.append(SearchResultItem(
                 book_id=bid,
-                title=book.title,
-                author_name=book.author_name or "",
-                publisher_name=book.publisher_name or "",
-                category_id=book.category_id,
-                category_name=book.category_name or "",
+                title=book_dict.get("title", ""),
+                author_name=book_dict.get("author_name") or "",
+                publisher_name=book_dict.get("publisher_name") or "",
+                category_id=book_dict.get("category_id"),
+                category_name=book_dict.get("category_name") or "",
                 description=desc,
-                cover_image=book.cover_image,
+                cover_image=book_dict.get("cover_image"),
                 min_price=min_p,
                 max_price=max_p,
                 available_stock=total_avail,
@@ -278,22 +278,22 @@ class SearchService:
         if not best_id:
             return SearchResponse(total_found=0, search_mode="visual_dhash", results=[])
 
-        book = self.book_repo.get_book_entity_by_id(best_id)
-        if not book or not book.is_searchable():
+        book_dict = self.book_repo.get_book_by_id(int(best_id))
+        if not book_dict or not book_dict.get("is_active"):
             return SearchResponse(total_found=0, search_mode="visual_dhash", results=[])
 
         res_item = SearchResultItem(
             book_id=best_id,
-            title=book.title,
-            author_name=book.author_name or "",
-            publisher_name=book.publisher_name or "",
-            category_id=book.category_id,
-            category_name=book.category_name or "",
-            description=book.description or "",
-            cover_image=book.cover_image,
-            min_price=book.min_price(),
-            max_price=book.max_price(),
-            available_stock=book.total_available_stock(),
+            title=book_dict.get("title", ""),
+            author_name=book_dict.get("author_name") or "",
+            publisher_name=book_dict.get("publisher_name") or "",
+            category_id=book_dict.get("category_id"),
+            category_name=book_dict.get("category_name") or "",
+            description=book_dict.get("description") or "",
+            cover_image=book_dict.get("cover_image"),
+            min_price=book_dict.get("unit_price", 0),
+            max_price=book_dict.get("unit_price", 0),
+            available_stock=max(0, (book_dict.get("stock_on_hand", 0) - book_dict.get("stock_reserved", 0))),
             similarity_score=round(confidence / 100.0, 3),
             explanation_snippet=f"Đã khớp ảnh bìa chính xác (Độ tin cậy: {confidence}%)"
         )
