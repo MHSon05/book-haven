@@ -39,7 +39,7 @@ class UserProfileResponse(BaseModel):
 
 # ==================== CART DTOs ====================
 class AddToCartRequest(BaseModel):
-    edition_id: str
+    edition_id: Any
     quantity: int = Field(default=1, ge=1)
 
 class UpdateCartItemRequest(BaseModel):

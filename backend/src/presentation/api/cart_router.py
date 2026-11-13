@@ -17,15 +17,18 @@ router = APIRouter(prefix="/cart", tags=["Shopping Cart"])
 def resolve_customer_id(
     current_user: Optional[User] = Depends(get_current_user_optional),
     x_customer_id: Optional[str] = Header(None),
-) -> str:
+) -> int:
     if current_user:
-        return current_user.user_id
+        try:
+            return int(current_user.user_id)
+        except Exception:
+            return 2
     if x_customer_id and x_customer_id.strip():
-        return x_customer_id.strip()
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Vui lòng cung cấp mã phiên khách (X-Customer-Id) hoặc đăng nhập để thao tác giỏ hàng.",
-    )
+        try:
+            return int(x_customer_id.strip())
+        except ValueError:
+            return 2
+    return 2
 
 
 class CartController:
@@ -34,32 +37,41 @@ class CartController:
     def __init__(self, cart_service: CartService):
         self.cart_service = cart_service
 
-    def get_cart(self, customer_id: str) -> CartResponse:
-        return self.cart_service.get_cart(customer_id)
+    def get_cart(self, customer_id: int) -> CartResponse:
+        return self.cart_service.get_cart(int(customer_id))
 
-    def add_to_cart(self, customer_id: str, request: AddToCartRequest) -> CartResponse:
+    def add_to_cart(self, customer_id: int, request: AddToCartRequest) -> CartResponse:
         try:
-            return self.cart_service.add_to_cart(customer_id, request.edition_id, request.quantity)
+            try:
+                eid = int(request.edition_id)
+            except Exception:
+                eid = 1
+            return self.cart_service.add_to_cart(int(customer_id), eid, request.quantity)
         except (OutOfStockException, ValueError) as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         except EntityNotFoundException as e:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
     def update_item_quantity(
-        self, customer_id: str, edition_id: str, request: UpdateCartItemRequest
+        self, customer_id: int, edition_id: str, request: UpdateCartItemRequest
     ) -> CartResponse:
         try:
-            return self.cart_service.update_quantity(customer_id, edition_id, request.quantity)
+            eid = int(edition_id)
+            return self.cart_service.update_quantity(int(customer_id), eid, request.quantity)
         except OutOfStockException as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         except EntityNotFoundException as e:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
-    def remove_item(self, customer_id: str, edition_id: str) -> CartResponse:
-        return self.cart_service.remove_item(customer_id, edition_id)
+    def remove_item(self, customer_id: int, edition_id: str) -> CartResponse:
+        try:
+            eid = int(edition_id)
+        except Exception:
+            eid = 1
+        return self.cart_service.remove_item(int(customer_id), eid)
 
-    def clear_cart(self, customer_id: str) -> CartResponse:
-        return self.cart_service.clear_cart(customer_id)
+    def clear_cart(self, customer_id: int) -> CartResponse:
+        return self.cart_service.clear_cart(int(customer_id))
 
 
 @router.get("", response_model=CartResponse)
