@@ -16,7 +16,7 @@ from ...infrastructure.repositories.book_repository import BookRepository
 from ...infrastructure.repositories.cart_repository import CartRepository
 from ...infrastructure.repositories.order_repository import OrderRepository
 from ...infrastructure.adapters.vietqr_service import VietQRService
-from ..dtos.models import CheckoutRequest, OrderResponse, OrderItemDTO, ShippingOptionsResponse, ShippingOption
+from ..dtos.checkout_dto import CheckoutRequest, OrderResponse, OrderItemDTO, ShippingOptionsResponse, ShippingOption
 
 
 class CheckoutService:

@@ -1,13 +1,22 @@
 """
-Presentation Layer: CheckoutController & FastAPI Router
-Xử lý Quy trình Đặt hàng 10 bước (Checkout) và Tra cứu Tùy chọn Giao vận (Drone & GHN).
+Presentation Layer: CheckoutController & FastAPI Router (presentation.api)
+Xử lý Quy trình Đặt hàng 10 bước (Checkout) và Tra cứu Tùy chọn Giao vận.
+Khớp 100% Listing 4.2 và Figure 4.5.
 """
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from ...application.dtos.models import CheckoutRequest, OrderResponse, ShippingOptionsResponse
+from ...application.dtos.checkout_dto import (
+    CheckoutRequest,
+    OrderResponse,
+    ShippingOptionsResponse,
+)
 from ...application.services.checkout_service import CheckoutService
-from ...domain.exceptions import OutOfStockException, DroneOverweightException, DomainException
+from ...domain.exceptions import (
+    OutOfStockException,
+    DroneOverweightException,
+    DomainException,
+)
 from ..dependencies import get_checkout_service
 from .cart_router import resolve_customer_id
 
@@ -45,3 +54,6 @@ def get_shipping_options(
     checkout_service: CheckoutService = Depends(get_checkout_service),
 ):
     return CheckoutController(checkout_service).get_shipping_options(cart_id)
+
+
+__all__ = ["router", "CheckoutController"]

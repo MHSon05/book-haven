@@ -1,18 +1,21 @@
 """
-Presentation Layer: SearchController & FastAPI Router
+Presentation Layer: SearchController & FastAPI Router (presentation.api)
 Cung cấp các API tìm kiếm đa phương thức: Từ khóa SQL, Ngữ nghĩa AI (Vector) và Bìa sách (dHash).
+Khớp 100% Listing 4.2 và Figure 4.5.
 """
 import os
 from typing import Optional
 from fastapi import APIRouter, Depends, Query, UploadFile, File, HTTPException, status
 
-from ...application.dtos.models import SearchResponse, SemanticSearchRequest
+from ...application.dtos.search_dto import (
+    SearchResponse,
+    SemanticSearchRequest,
+)
 from ...application.services.search_service import SearchService
 from ..dependencies import get_search_service
 
 router = APIRouter(prefix="/search", tags=["Search Multi-Modal"])
 
-# Đường dẫn thư mục assets chứa ảnh bìa so khớp dHash
 ASSETS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "assets"))
 
 
@@ -59,11 +62,12 @@ class SearchController:
             )
 
 
+@router.get("", response_model=SearchResponse)
 @router.get("/keyword", response_model=SearchResponse)
 def search_keyword(
-    q: str = Query("", description="Từ khóa tìm kiếm (tên sách, tác giả, ISBN, SKU)"),
-    category_id: Optional[str] = Query(None, description="Lọc theo thể loại"),
-    binding_type: Optional[str] = Query(None, description="Lọc theo quy cách bìa (PAPERBACK/HARDCOVER)"),
+    q: str = Query(..., min_length=1, description="Từ khóa tìm kiếm tiêu đề, tác giả"),
+    category_id: Optional[str] = Query(None, description="Mã thể loại lọc"),
+    binding_type: Optional[str] = Query(None, description="Quy cách ấn bản: Paperback / Hardcover"),
     limit: int = Query(20, ge=1, le=50),
     search_service: SearchService = Depends(get_search_service),
 ):
@@ -84,9 +88,12 @@ def search_semantic(
 
 
 @router.post("/image", response_model=SearchResponse)
-async def search_by_image(
-    file: UploadFile = File(..., description="Tệp ảnh chụp bìa sách (JPEG, PNG, WEBP)"),
+async def search_by_cover_image(
+    file: UploadFile = File(..., description="Ảnh bìa chụp từ camera hoặc thiết bị của độc giả"),
     search_service: SearchService = Depends(get_search_service),
 ):
     image_bytes = await file.read()
-    return SearchController(search_service).search_by_image(image_bytes, ASSETS_DIR)
+    return SearchController(search_service).search_by_image(image_bytes)
+
+
+__all__ = ["router", "SearchController"]

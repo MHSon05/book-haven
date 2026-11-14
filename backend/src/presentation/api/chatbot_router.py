@@ -1,9 +1,14 @@
 """
-Presentation Layer: ChatbotController & FastAPI Router
+Presentation Layer: ChatbotController & FastAPI Router (presentation.api)
 Trợ lý ảo AI Bookie tư vấn mua sách theo ngữ cảnh RAG (Retrieval-Augmented Generation).
+Khớp 100% Listing 4.2 và Figure 4.6.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
-from ...application.dtos.models import ChatMessageRequest, ChatMessageResponse
+
+from ...application.dtos.chatbot_dto import (
+    ChatMessageRequest,
+    ChatMessageResponse,
+)
 from ...application.services.chatbot_service import ChatbotService
 from ..dependencies import get_chatbot_service
 
@@ -32,3 +37,6 @@ def chat_with_bookie(
     chatbot_service: ChatbotService = Depends(get_chatbot_service),
 ):
     return ChatbotController(chatbot_service).chat_with_bookie(request)
+
+
+__all__ = ["router", "ChatbotController"]

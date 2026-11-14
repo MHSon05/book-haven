@@ -8,7 +8,7 @@ from ...domain.entities.cart import Cart
 from ...domain.exceptions import EntityNotFoundException, OutOfStockException
 from ...infrastructure.repositories.cart_repository import CartRepository
 from ...infrastructure.repositories.book_repository import BookRepository
-from ..dtos.models import CartResponse, CartItemDTO
+from ..dtos.cart_dto import CartResponse, CartItemDTO
 
 
 class CartService:

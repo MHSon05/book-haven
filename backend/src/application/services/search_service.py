@@ -10,7 +10,7 @@ from typing import List, Dict, Any, Optional
 from ...infrastructure.repositories.book_repository import BookRepository
 from ...infrastructure.adapters.sentence_transformer_adapter import SentenceTransformerAdapter
 from ...infrastructure.adapters.image_hasher import ImageHasher
-from ..dtos.models import SearchResponse, SearchResultItem
+from ..dtos.search_dto import SearchResponse, SearchResultItem
 
 VIETNAMESE_STOPWORDS = {
     "và", "của", "những", "các", "thì", "là", "mà", "cho", "với", "được", "bị", "bởi",

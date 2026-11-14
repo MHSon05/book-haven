@@ -1,11 +1,16 @@
 """
-Presentation Layer: CartController & FastAPI Router
-Quản lý giỏ hàng: xem, thêm ấn bản, thay đổi số lượng, xóa và làm rỗng.
+Presentation Layer: CartController & FastAPI Router (presentation.api)
+Quản lý các điểm cuối giỏ hàng: xem, thêm ấn bản, thay đổi số lượng, xóa và làm rỗng.
+Khớp 100% Listing 4.2 và Figure 4.5.
 """
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Header, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 
-from ...application.dtos.models import AddToCartRequest, UpdateCartItemRequest, CartResponse
+from ...application.dtos.cart_dto import (
+    AddToCartRequest,
+    UpdateCartItemRequest,
+    CartResponse,
+)
 from ...application.services.cart_service import CartService
 from ...domain.entities.user import User
 from ...domain.exceptions import OutOfStockException, EntityNotFoundException
@@ -116,3 +121,6 @@ def clear_cart(
     cart_service: CartService = Depends(get_cart_service),
 ):
     return CartController(cart_service).clear_cart(customer_id)
+
+
+__all__ = ["router", "resolve_customer_id", "CartController"]

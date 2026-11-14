@@ -14,7 +14,7 @@ from ...domain.entities.user import User
 from ...domain.entities.customer import Customer
 from ...domain.exceptions import DomainException, EntityNotFoundException
 from ...infrastructure.repositories.user_repository import UserRepository
-from ..dtos.models import LoginRequest, RegisterRequest, TokenResponse, UserProfileResponse
+from ..dtos.auth_dto import LoginRequest, RegisterRequest, TokenResponse, UserProfileResponse
 
 DEFAULT_SECRET = "bookhaven-ecommerce-secret-key-pttkhttt-2026-ptit-security"
 ALGORITHM = "HS256"

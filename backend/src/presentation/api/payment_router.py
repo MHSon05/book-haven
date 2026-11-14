@@ -1,12 +1,14 @@
 """
-Presentation Layer: PaymentController & FastAPI Router
+Presentation Layer: PaymentController & FastAPI Router (presentation.api)
 Tiếp nhận xác nhận thanh toán VietQR, Webhook ngân hàng và Polling trạng thái đơn hàng.
+Khớp 100% Listing 4.2 và Figure 4.5.
 """
 from typing import Dict, Any, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from ...application.dtos.models import OrderResponse, ConfirmPaymentRequest
+from ...application.dtos.checkout_dto import OrderResponse
+from ...application.dtos.payment_dto import ConfirmPaymentRequest
 from ...application.services.payment_service import PaymentService
 from ...application.services.inventory_service import InventoryService
 from ...domain.exceptions import EntityNotFoundException, InvalidOrderStateException
@@ -66,10 +68,7 @@ class PaymentController:
 
     def mark_order_delivered(self, order_id: str) -> OrderResponse:
         if self.inventory_service is None:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="InventoryService chưa được cấu hình.",
-            )
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Thiếu InventoryService.")
         try:
             return self.inventory_service.mark_delivered(order_id)
         except EntityNotFoundException as e:
@@ -91,10 +90,6 @@ def receive_bank_webhook(
     payload: Dict[str, Any],
     payment_service: PaymentService = Depends(get_payment_service),
 ):
-    """
-    Webhook tiếp nhận thông báo biến động số dư từ MBBank / VietQR / Casso / SePay.
-    Tự động đối soát nội dung chuyển khoản khớp mã đơn hàng để đổi trạng thái đơn sang PAID.
-    """
     return PaymentController(payment_service).receive_bank_webhook(payload)
 
 
@@ -107,13 +102,13 @@ def get_order_payment_status(
     return PaymentController(payment_service, inventory_service).get_order_payment_status(order_id)
 
 
-@router.post("/orders/{order_id}/delivered")
+@router.post("/orders/{order_id}/delivered", response_model=OrderResponse)
 def mark_order_delivered(
     order_id: str,
     payment_service: PaymentService = Depends(get_payment_service),
     inventory_service: InventoryService = Depends(get_inventory_service),
 ):
-    """
-    Xác nhận giao hàng thành công (dành cho client hoặc khi hoàn tất hành trình Drone bay).
-    """
     return PaymentController(payment_service, inventory_service).mark_order_delivered(order_id)
+
+
+__all__ = ["router", "PaymentController"]

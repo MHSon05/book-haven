@@ -13,7 +13,7 @@ from ...domain.exceptions import EntityNotFoundException, InvalidOrderStateExcep
 from ...infrastructure.database import DatabaseSession
 from ...infrastructure.repositories.order_repository import OrderRepository
 from ...infrastructure.repositories.book_repository import BookRepository
-from ..dtos.models import OrderResponse, OrderItemDTO
+from ..dtos.checkout_dto import OrderResponse, OrderItemDTO
 
 
 class PaymentService:

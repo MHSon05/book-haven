@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from ...infrastructure.adapters.cloudflare_llm import CloudflareLLMAdapter
 from ...infrastructure.repositories.book_repository import BookRepository
-from ..dtos.models import BookCardDTO, ChatMessageResponse
+from ..dtos.chatbot_dto import BookCardDTO, ChatMessageResponse
 from .search_service import SearchService
 
 SYSTEM_PROMPT_TEMPLATE = """Bạn là Bookie, trợ lý ảo AI thông minh, nhiệt huyết và là chuyên gia tư vấn văn hóa đọc của Hiệu sách Trực tuyến BookHaven.
